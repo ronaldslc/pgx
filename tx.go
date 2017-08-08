@@ -102,10 +102,11 @@ func (c *Conn) BeginEx(ctx context.Context, txOptions *TxOptions) (*Tx, error) {
 // All Tx methods return ErrTxClosed if Commit or Rollback has already been
 // called on the Tx.
 type Tx struct {
-	conn     *Conn
-	connPool *ConnPool
-	err      error
-	status   int8
+	conn       *Conn
+	connPool   *ConnPool
+	err        error
+	status     int8
+	afterClose func(*Tx)
 }
 
 // Commit commits the transaction
@@ -136,6 +137,9 @@ func (tx *Tx) CommitEx(ctx context.Context) error {
 		tx.connPool.Release(tx.conn)
 	}
 
+	if tx.afterClose != nil {
+		tx.afterClose(tx)
+	}
 	return tx.err
 }
 
@@ -162,6 +166,9 @@ func (tx *Tx) Rollback() error {
 		tx.connPool.Release(tx.conn)
 	}
 
+	if tx.afterClose != nil {
+		tx.afterClose(tx)
+	}
 	return tx.err
 }
 
@@ -223,4 +230,18 @@ func (tx *Tx) Status() int8 {
 // Err returns the final error state, if any, of calling Commit or Rollback.
 func (tx *Tx) Err() error {
 	return tx.err
+}
+
+// AfterClose adds f to a LILO queue of functions that will be called when
+// the transaction is closed (either Commit or Rollback).
+func (tx *Tx) AfterClose(f func(*Tx)) {
+	if tx.afterClose == nil {
+		tx.afterClose = f
+	} else {
+		prevFn := tx.afterClose
+		tx.afterClose = func(tx *Tx) {
+			f(tx)
+			prevFn(tx)
+		}
+	}
 }
