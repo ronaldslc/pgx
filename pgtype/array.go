@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/ronaldslc/pgx/pgio"
 	"github.com/pkg/errors"
+	"github.com/ronaldslc/pgx/pgio"
 )
 
 // Information on the internals of PostgreSQL arrays can be found in

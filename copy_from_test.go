@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ronaldslc/pgx"
 	"github.com/pkg/errors"
+	"github.com/ronaldslc/pgx"
 )
 
 func TestConnCopyFromSmall(t *testing.T) {

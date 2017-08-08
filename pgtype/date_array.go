@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"time"
 
-	"github.com/ronaldslc/pgx/pgio"
 	"github.com/pkg/errors"
+	"github.com/ronaldslc/pgx/pgio"
 )
 
 type DateArray struct {

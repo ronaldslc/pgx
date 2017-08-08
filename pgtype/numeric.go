@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ronaldslc/pgx/pgio"
 	"github.com/pkg/errors"
+	"github.com/ronaldslc/pgx/pgio"
 )
 
 // PostgreSQL internal numeric storage uses 16-bit "digits" with base of 10,000

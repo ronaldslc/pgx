@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/pkg/errors"
 	"github.com/ronaldslc/pgx/pgio"
 	"github.com/ronaldslc/pgx/pgproto3"
-	"github.com/pkg/errors"
 )
 
 // CopyFromRows returns a CopyFromSource interface over the provided rows slice

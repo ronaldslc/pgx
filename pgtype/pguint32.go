@@ -6,8 +6,8 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/ronaldslc/pgx/pgio"
 	"github.com/pkg/errors"
+	"github.com/ronaldslc/pgx/pgio"
 )
 
 // pguint32 is the core type that is used to implement PostgreSQL types such as

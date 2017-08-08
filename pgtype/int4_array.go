@@ -4,8 +4,8 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 
-	"github.com/ronaldslc/pgx/pgio"
 	"github.com/pkg/errors"
+	"github.com/ronaldslc/pgx/pgio"
 )
 
 type Int4Array struct {

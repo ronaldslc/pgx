@@ -6,8 +6,8 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/ronaldslc/pgx/pgio"
 	"github.com/pkg/errors"
+	"github.com/ronaldslc/pgx/pgio"
 )
 
 type Int2 struct {

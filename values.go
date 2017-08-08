@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/ronaldslc/pgx/pgio"
 	"github.com/ronaldslc/pgx/pgtype"
-	"github.com/pkg/errors"
 )
 
 // PostgreSQL format codes

@@ -5,9 +5,9 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/pkg/errors"
 	"github.com/ronaldslc/pgx"
 	"github.com/ronaldslc/pgx/pgtype"
-	"github.com/pkg/errors"
 )
 
 var pointRegexp *regexp.Regexp = regexp.MustCompile(`^\((.*),(.*)\)$`)

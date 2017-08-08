@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ronaldslc/pgx/pgio"
 	"github.com/pkg/errors"
+	"github.com/ronaldslc/pgx/pgio"
 )
 
 const (

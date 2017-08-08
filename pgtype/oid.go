@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"strconv"
 
-	"github.com/ronaldslc/pgx/pgio"
 	"github.com/pkg/errors"
+	"github.com/ronaldslc/pgx/pgio"
 )
 
 // OID (Object Identifier Type) is, according to

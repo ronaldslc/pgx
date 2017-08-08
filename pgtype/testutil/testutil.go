@@ -8,10 +8,10 @@ import (
 	"reflect"
 	"testing"
 
+	_ "github.com/lib/pq"
 	"github.com/ronaldslc/pgx"
 	"github.com/ronaldslc/pgx/pgtype"
 	_ "github.com/ronaldslc/pgx/stdlib"
-	_ "github.com/lib/pq"
 )
 
 func MustConnectDatabaseSQL(t testing.TB, driverName string) *sql.DB {

@@ -3,8 +3,8 @@ package pgtype
 import (
 	"database/sql/driver"
 
-	"github.com/ronaldslc/pgx/pgio"
 	"github.com/pkg/errors"
+	"github.com/ronaldslc/pgx/pgio"
 )
 
 type Tstzrange struct {

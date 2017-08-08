@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"io"
 
-	"github.com/ronaldslc/pgx/chunkreader"
 	"github.com/pkg/errors"
+	"github.com/ronaldslc/pgx/chunkreader"
 )
 
 type Backend struct {
