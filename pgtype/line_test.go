@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	version "github.com/hashicorp/go-version"
-	"github.com/jackc/pgx/pgtype"
-	"github.com/jackc/pgx/pgtype/testutil"
+	"github.com/ronaldslc/pgx/pgtype"
+	"github.com/ronaldslc/pgx/pgtype/testutil"
 )
 
 func TestLineTranscode(t *testing.T) {

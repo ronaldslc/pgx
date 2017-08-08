@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx"
-	"github.com/jackc/pgx/pgtype"
+	"github.com/ronaldslc/pgx"
+	"github.com/ronaldslc/pgx/pgtype"
 )
 
 func BenchmarkConnPool(b *testing.B) {

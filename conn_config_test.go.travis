@@ -2,7 +2,7 @@ package pgx_test
 
 import (
   "crypto/tls"
-  "github.com/jackc/pgx"
+  "github.com/ronaldslc/pgx"
   "os"
   "strconv"
 )

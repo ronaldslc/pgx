@@ -3,7 +3,7 @@ package sanitize_test
 import (
 	"testing"
 
-	"github.com/jackc/pgx/internal/sanitize"
+	"github.com/ronaldslc/pgx/internal/sanitize"
 )
 
 func TestNewQuery(t *testing.T) {

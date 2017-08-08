@@ -3,7 +3,7 @@ package pgx
 import (
 	"io"
 
-	"github.com/jackc/pgx/pgtype"
+	"github.com/ronaldslc/pgx/pgtype"
 )
 
 // LargeObjects is a structure used to access the large objects API. It is only

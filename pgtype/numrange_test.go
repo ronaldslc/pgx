@@ -4,8 +4,8 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/jackc/pgx/pgtype"
-	"github.com/jackc/pgx/pgtype/testutil"
+	"github.com/ronaldslc/pgx/pgtype"
+	"github.com/ronaldslc/pgx/pgtype/testutil"
 )
 
 func TestNumrangeTranscode(t *testing.T) {

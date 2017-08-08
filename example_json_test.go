@@ -3,7 +3,7 @@ package pgx_test
 import (
 	"fmt"
 
-	"github.com/jackc/pgx"
+	"github.com/ronaldslc/pgx"
 )
 
 func Example_JSON() {

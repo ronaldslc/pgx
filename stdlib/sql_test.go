@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx"
-	"github.com/jackc/pgx/pgmock"
-	"github.com/jackc/pgx/pgproto3"
-	"github.com/jackc/pgx/stdlib"
+	"github.com/ronaldslc/pgx"
+	"github.com/ronaldslc/pgx/pgmock"
+	"github.com/ronaldslc/pgx/pgproto3"
+	"github.com/ronaldslc/pgx/stdlib"
 )
 
 func openDB(t *testing.T) *sql.DB {

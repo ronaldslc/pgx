@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"strconv"
 
-	"github.com/jackc/pgx/pgio"
+	"github.com/ronaldslc/pgx/pgio"
 	"github.com/pkg/errors"
 )
 

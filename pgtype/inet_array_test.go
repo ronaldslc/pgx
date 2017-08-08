@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/jackc/pgx/pgtype"
-	"github.com/jackc/pgx/pgtype/testutil"
+	"github.com/ronaldslc/pgx/pgtype"
+	"github.com/ronaldslc/pgx/pgtype/testutil"
 )
 
 func TestInetArrayTranscode(t *testing.T) {

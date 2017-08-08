@@ -10,7 +10,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/jackc/pgx"
+	"github.com/ronaldslc/pgx"
 )
 
 func createConnPool(t *testing.T, maxConnections int) *pgx.ConnPool {
