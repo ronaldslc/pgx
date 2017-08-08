@@ -137,6 +137,7 @@ type PreparedStatement struct {
 	SQL               string
 	FieldDescriptions []FieldDescription
 	ParameterOIDs     []pgtype.OID
+	Id                string // This is the prepared statement ID, this is used instead of name to "work around" the 63 character limit
 }
 
 // PrepareExOptions is an option struct that can be passed to PrepareEx
@@ -756,10 +757,13 @@ func (c *Conn) PrepareEx(ctx context.Context, name, sql string, opts *PrepareExO
 }
 
 func (c *Conn) prepareEx(name, sql string, opts *PrepareExOptions) (ps *PreparedStatement, err error) {
+	var id string
 	if name != "" {
 		if ps, ok := c.preparedStatements[name]; ok && ps.SQL == sql {
 			return ps, nil
 		}
+
+		id = strconv.Itoa(len(c.preparedStatements))
 	}
 
 	if err := c.ensureConnectionReadyForQuery(); err != nil {
@@ -782,8 +786,8 @@ func (c *Conn) prepareEx(name, sql string, opts *PrepareExOptions) (ps *Prepared
 		return nil, errors.Errorf("Number of PrepareExOptions ParameterOIDs must be between 0 and 65535, received %d", len(opts.ParameterOIDs))
 	}
 
-	buf := appendParse(c.wbuf, name, sql, opts.ParameterOIDs)
-	buf = appendDescribe(buf, 'S', name)
+	buf := appendParse(c.wbuf, id, sql, opts.ParameterOIDs)
+	buf = appendDescribe(buf, 'S', id)
 	buf = appendSync(buf)
 
 	n, err := c.conn.Write(buf)
@@ -795,7 +799,7 @@ func (c *Conn) prepareEx(name, sql string, opts *PrepareExOptions) (ps *Prepared
 	}
 	c.pendingReadyForQueryCount++
 
-	ps = &PreparedStatement{Name: name, SQL: sql}
+	ps = &PreparedStatement{Name: name, SQL: sql, Id: id}
 
 	var softErr error
 
@@ -866,6 +870,11 @@ func (c *Conn) deallocateContext(ctx context.Context, name string) (err error) {
 		return err
 	}
 
+	ps, ok := c.preparedStatements[name]
+	id := name
+	if ok {
+		id = ps.Id
+	}
 	delete(c.preparedStatements, name)
 
 	// close
@@ -874,7 +883,7 @@ func (c *Conn) deallocateContext(ctx context.Context, name string) (err error) {
 	sp := len(buf)
 	buf = pgio.AppendInt32(buf, -1)
 	buf = append(buf, 'S')
-	buf = append(buf, name...)
+	buf = append(buf, id...)
 	buf = append(buf, 0)
 	pgio.SetInt32(buf[sp:], int32(len(buf[sp:])))
 
@@ -1041,7 +1050,7 @@ func (c *Conn) sendPreparedQuery(ps *PreparedStatement, arguments ...interface{}
 	for i, fd := range ps.FieldDescriptions {
 		resultFormatCodes[i] = fd.FormatCode
 	}
-	buf, err := appendBind(c.wbuf, "", ps.Name, c.ConnInfo, ps.ParameterOIDs, arguments, resultFormatCodes)
+	buf, err := appendBind(c.wbuf, "", ps.Id, c.ConnInfo, ps.ParameterOIDs, arguments, resultFormatCodes)
 	if err != nil {
 		return err
 	}

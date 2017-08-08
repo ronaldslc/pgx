@@ -79,7 +79,7 @@ func (b *Batch) Send(ctx context.Context, txOptions *TxOptions) error {
 		var psParameterOIDs []pgtype.OID
 
 		if ps, ok := b.conn.preparedStatements[bi.query]; ok {
-			psName = ps.Name
+			psName = ps.Id
 			psParameterOIDs = ps.ParameterOIDs
 		} else {
 			psParameterOIDs = bi.parameterOIDs
