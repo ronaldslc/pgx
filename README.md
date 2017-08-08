@@ -14,6 +14,8 @@ if err != nil {
     return err
 }
 ```
+## This is a fork
+Please see v2 / v3 branch for details, the master branch is not maintained.
 
 ## Features
 
