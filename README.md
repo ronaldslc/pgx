@@ -18,6 +18,7 @@ if err != nil {
 This fork...
 * Replaces prepared statement names with an incremented identifier to remove the limitations of having [only 63 characters in prepared statement names](https://www.postgresql.org/message-id/CAKFQuwY1KmJ0tQuNVhd%3DGVy4-VQrBVfEaawNxySomBbP7mxRkQ@mail.gmail.com).
 * Restores tx.AfterClose
+* pgtype.Varchar provides UnmarshalJSON
 
 ## Features
 
