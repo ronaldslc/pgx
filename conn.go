@@ -34,6 +34,15 @@ const (
 	connStatusBusy
 )
 
+// @ronaldslc: in pgx, once a connection calls BEGIN to begin a transaction, all connection will be a part of that
+// transaction, even through the Conn structure, this interface is useful for functions where it does not care
+// if it is part of a Conn or Tx.
+type IConn interface {
+	Exec(sql string, arguments ...interface{}) (commandTag CommandTag, err error)
+	Query(sql string, args ...interface{}) (*Rows, error)
+	QueryRow(sql string, args ...interface{}) *Row
+}
+
 // minimalConnInfo has just enough static type information to establish the
 // connection and retrieve the type data.
 var minimalConnInfo *pgtype.ConnInfo
