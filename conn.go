@@ -41,6 +41,7 @@ type IConn interface {
 	Exec(sql string, arguments ...interface{}) (commandTag CommandTag, err error)
 	Query(sql string, args ...interface{}) (*Rows, error)
 	QueryRow(sql string, args ...interface{}) *Row
+	Prepare(name, sql string) (ps *PreparedStatement, err error)
 }
 
 // minimalConnInfo has just enough static type information to establish the
