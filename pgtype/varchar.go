@@ -54,11 +54,5 @@ func (src *Varchar) MarshalJSON() ([]byte, error) {
 }
 
 func (dst *Varchar) UnmarshalJSON(b []byte) error {
-	dst.Status = Null
-
-	if b != nil {
-		dst.String = string(b)
-		dst.Status = Present
-	}
-	return nil
+	return (*Text)(dst).UnmarshalJSON(b)
 }
