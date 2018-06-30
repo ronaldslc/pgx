@@ -232,7 +232,7 @@ func (tx *Tx) Err() error {
 	return tx.err
 }
 
-// AfterClose adds f to a LILO queue of functions that will be called when
+// AfterClose adds f to a LIFO queue of functions that will be called when
 // the transaction is closed (either Commit or Rollback).
 func (tx *Tx) AfterClose(f func(*Tx)) {
 	if tx.afterClose == nil {
@@ -240,8 +240,8 @@ func (tx *Tx) AfterClose(f func(*Tx)) {
 	} else {
 		prevFn := tx.afterClose
 		tx.afterClose = func(tx *Tx) {
-			prevFn(tx)
 			f(tx)
+			prevFn(tx)
 		}
 	}
 }
