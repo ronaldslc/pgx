@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 
+	"fmt"
 	"github.com/pkg/errors"
 	"github.com/ronaldslc/pgx/pgio"
 )
@@ -16,7 +17,24 @@ type TextArray struct {
 
 func (dst *TextArray) Set(src interface{}) error {
 	switch value := src.(type) {
-
+	case []fmt.Stringer:
+		if value == nil {
+			*dst = TextArray{Status: Null}
+		} else if len(value) == 0 {
+			*dst = TextArray{Status: Present}
+		} else {
+			elements := make([]Text, len(value))
+			for i := range value {
+				if err := elements[i].Set(value[i]); err != nil {
+					return err
+				}
+			}
+			*dst = TextArray{
+				Elements:   elements,
+				Dimensions: []ArrayDimension{{Length: int32(len(elements)), LowerBound: 1}},
+				Status:     Present,
+			}
+		}
 	case []string:
 		if value == nil {
 			*dst = TextArray{Status: Null}

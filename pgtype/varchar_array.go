@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/binary"
 
+	"fmt"
 	"github.com/pkg/errors"
 	"github.com/ronaldslc/pgx/pgio"
 )
@@ -16,7 +17,24 @@ type VarcharArray struct {
 
 func (dst *VarcharArray) Set(src interface{}) error {
 	switch value := src.(type) {
-
+	case []fmt.Stringer:
+		if value == nil {
+			*dst = VarcharArray{Status: Null}
+		} else if len(value) == 0 {
+			*dst = VarcharArray{Status: Present}
+		} else {
+			elements := make([]Varchar, len(value))
+			for i := range value {
+				if err := elements[i].Set(value[i]); err != nil {
+					return err
+				}
+			}
+			*dst = VarcharArray{
+				Elements:   elements,
+				Dimensions: []ArrayDimension{{Length: int32(len(elements)), LowerBound: 1}},
+				Status:     Present,
+			}
+		}
 	case []string:
 		if value == nil {
 			*dst = VarcharArray{Status: Null}

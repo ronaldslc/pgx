@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 
+	"fmt"
 	"github.com/pkg/errors"
 )
 
@@ -19,6 +20,12 @@ func (dst *Text) Set(src interface{}) error {
 	}
 
 	switch value := src.(type) {
+	case fmt.Stringer:
+		if value == nil {
+			*dst = Text{Status: Null}
+		} else {
+			*dst = Text{String: value.String(), Status: Present}
+		}
 	case string:
 		*dst = Text{String: value, Status: Present}
 	case *string:
