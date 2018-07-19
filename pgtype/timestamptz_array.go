@@ -18,6 +18,18 @@ type TimestamptzArray struct {
 func (dst *TimestamptzArray) Set(src interface{}) error {
 	switch value := src.(type) {
 
+	case []Timestamptz:
+		if value == nil {
+			*dst = TimestamptzArray{Status: Null}
+		} else if len(value) == 0 {
+			*dst = TimestamptzArray{Status: Present}
+		} else {
+			*dst = TimestamptzArray{
+				Elements:   value,
+				Dimensions: []ArrayDimension{{Length: int32(len(value)), LowerBound: 1}},
+				Status:     Present,
+			}
+		}
 	case []time.Time:
 		if value == nil {
 			*dst = TimestamptzArray{Status: Null}
