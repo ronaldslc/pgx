@@ -16,7 +16,24 @@ type Int8Array struct {
 
 func (dst *Int8Array) Set(src interface{}) error {
 	switch value := src.(type) {
-
+	case []int:
+		if value == nil {
+			*dst = Int8Array{Status: Null}
+		} else if len(value) == 0 {
+			*dst = Int8Array{Status: Present}
+		} else {
+			elements := make([]Int8, len(value))
+			for i := range value {
+				if err := elements[i].Set(value[i]); err != nil {
+					return err
+				}
+			}
+			*dst = Int8Array{
+				Elements:   elements,
+				Dimensions: []ArrayDimension{{Length: int32(len(elements)), LowerBound: 1}},
+				Status:     Present,
+			}
+		}
 	case []int64:
 		if value == nil {
 			*dst = Int8Array{Status: Null}

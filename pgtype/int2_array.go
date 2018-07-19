@@ -16,7 +16,24 @@ type Int2Array struct {
 
 func (dst *Int2Array) Set(src interface{}) error {
 	switch value := src.(type) {
-
+	case []int:
+		if value == nil {
+			*dst = Int2Array{Status: Null}
+		} else if len(value) == 0 {
+			*dst = Int2Array{Status: Present}
+		} else {
+			elements := make([]Int2, len(value))
+			for i := range value {
+				if err := elements[i].Set(value[i]); err != nil {
+					return err
+				}
+			}
+			*dst = Int2Array{
+				Elements:   elements,
+				Dimensions: []ArrayDimension{{Length: int32(len(elements)), LowerBound: 1}},
+				Status:     Present,
+			}
+		}
 	case []int16:
 		if value == nil {
 			*dst = Int2Array{Status: Null}
