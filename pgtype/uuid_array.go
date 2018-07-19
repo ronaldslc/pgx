@@ -22,7 +22,19 @@ func (dst *UUIDArray) Set(src interface{}) error {
 	}
 
 	switch value := src.(type) {
-
+	case []UUID:
+		if value == nil {
+			*dst = UUIDArray{Status: Null}
+		} else if len(value) == 0 {
+			*dst = UUIDArray{Status: Present}
+		} else {
+			elements := make([]UUID, len(value))
+			*dst = UUIDArray{
+				Elements:   value,
+				Dimensions: []ArrayDimension{{Length: int32(len(elements)), LowerBound: 1}},
+				Status:     Present,
+			}
+		}
 	case [][16]byte:
 		if value == nil {
 			*dst = UUIDArray{Status: Null}
