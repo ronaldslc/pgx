@@ -20,6 +20,11 @@ This fork...
 * Restores tx.AfterClose
 * pgtype.Varchar provides UnmarshalJSON
 * Addition of IConn interface that Conn and Tx both implements already
+* Implements pgtype.JSONBArray
+* Made []int work with int2,4,8 array
+* Took master branch's BPChar into V3
+* Allow []fmt.Stringer in varchar and text array
+* Took master branch's UUID array into V3  
 
 ## Features
 
