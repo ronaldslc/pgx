@@ -48,6 +48,7 @@ const (
 	TimestamptzArrayOID = 1185
 	RecordOID           = 2249
 	UUIDOID             = 2950
+	UUIDArrayOID        = 2951
 	JSONBOID            = 3802
 )
 
@@ -222,6 +223,7 @@ func init() {
 		"_text":        &TextArray{},
 		"_timestamp":   &TimestampArray{},
 		"_timestamptz": &TimestamptzArray{},
+		"_uuid":        &UUIDArray{},
 		"_varchar":     &VarcharArray{},
 		"aclitem":      &ACLItem{},
 		"bool":         &Bool{},
