@@ -17,6 +17,18 @@ type VarcharArray struct {
 
 func (dst *VarcharArray) Set(src interface{}) error {
 	switch value := src.(type) {
+	case []Varchar:
+		if value == nil {
+			*dst = VarcharArray{Status: Null}
+		} else if len(value) == 0 {
+			*dst = VarcharArray{Status: Present}
+		} else {
+			*dst = VarcharArray{
+				Elements:   value,
+				Dimensions: []ArrayDimension{{Length: int32(len(value)), LowerBound: 1}},
+				Status:     Present,
+			}
+		}
 	case []fmt.Stringer:
 		if value == nil {
 			*dst = VarcharArray{Status: Null}
