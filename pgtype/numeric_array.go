@@ -16,7 +16,18 @@ type NumericArray struct {
 
 func (dst *NumericArray) Set(src interface{}) error {
 	switch value := src.(type) {
-
+	case []Numeric:
+		if value == nil {
+			*dst = NumericArray{Status: Null}
+		} else if len(value) == 0 {
+			*dst = NumericArray{Status: Present}
+		} else {
+			*dst = NumericArray{
+				Elements:   value,
+				Dimensions: []ArrayDimension{{Length: int32(len(value)), LowerBound: 1}},
+				Status:     Present,
+			}
+		}
 	case []float32:
 		if value == nil {
 			*dst = NumericArray{Status: Null}
