@@ -452,7 +452,7 @@ func (c *Conn) QueryEx(ctx context.Context, sql string, options *QueryExOptions,
 			return rows, rows.err
 		}
 	}
-	rows.sql = ps.SQL
+	rows.sql = ps.Name
 	rows.fields = ps.FieldDescriptions
 
 	err = c.sendPreparedQuery(ps, args...)
