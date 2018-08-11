@@ -264,12 +264,16 @@ func (rc *ReplicationConn) readReplicationMessage() (r *ReplicationMessage, err 
 			return &ReplicationMessage{ServerHeartbeat: h}, nil
 		default:
 			if rc.c.shouldLog(LogLevelError) {
-				rc.c.log(LogLevelError, "Unexpected data playload message type", map[string]interface{}{"type": msgType})
+				var ld LogData
+				ld.Add("type", msgType)
+				rc.c.log(LogLevelError, "Unexpected data playload message type", ld)
 			}
 		}
 	default:
 		if rc.c.shouldLog(LogLevelError) {
-			rc.c.log(LogLevelError, "Unexpected replication message type", map[string]interface{}{"type": msg})
+			var ld LogData
+			ld.Add("type", msg)
+			rc.c.log(LogLevelError, "Unexpected replication message type", ld)
 		}
 	}
 	return
@@ -427,7 +431,10 @@ func (rc *ReplicationConn) StartReplication(slotName string, startLsn uint64, ti
 	r, err = rc.WaitForReplicationMessage(ctx)
 	if err != nil && r != nil {
 		if rc.c.shouldLog(LogLevelError) {
-			rc.c.log(LogLevelError, "Unexpected replication message", map[string]interface{}{"msg": r, "err": err})
+			var ld LogData
+			ld.Add("msg", r)
+			ld.Add("err", err)
+			rc.c.log(LogLevelError, "Unexpected replication message", ld)
 		}
 	}
 

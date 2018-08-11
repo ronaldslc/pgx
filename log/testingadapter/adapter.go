@@ -22,11 +22,11 @@ func NewLogger(l TestingLogger) *Logger {
 	return &Logger{l: l}
 }
 
-func (l *Logger) Log(level pgx.LogLevel, msg string, data map[string]interface{}) {
-	logArgs := make([]interface{}, 0, 2+len(data))
+func (l *Logger) Log(level pgx.LogLevel, msg string, ld pgx.LogData) {
+	logArgs := make([]interface{}, 0, 2+len(ld))
 	logArgs = append(logArgs, level, msg)
-	for k, v := range data {
-		logArgs = append(logArgs, fmt.Sprintf("%s=%v", k, v))
+	for _, v := range ld {
+		logArgs = append(logArgs, fmt.Sprintf("%s=%v", v.Key, v.Value))
 	}
 	l.l.Log(logArgs...)
 }

@@ -15,10 +15,14 @@ func NewLogger(l *logrus.Logger) *Logger {
 	return &Logger{l: l}
 }
 
-func (l *Logger) Log(level pgx.LogLevel, msg string, data map[string]interface{}) {
+func (l *Logger) Log(level pgx.LogLevel, msg string, ld pgx.LogData) {
 	var logger logrus.FieldLogger
-	if data != nil {
-		logger = l.l.WithFields(data)
+	if ld != nil {
+		f := make(logrus.Fields)
+		for _, v := range ld {
+			f[v.Key] = v.Value
+		}
+		logger = l.l.WithFields(f)
 	} else {
 		logger = l.l
 	}

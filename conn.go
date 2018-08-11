@@ -242,14 +242,18 @@ func connect(config ConnConfig, connInfo *pgtype.ConnInfo) (c *Conn, err error) 
 		}
 		c.config.User = user.Username
 		if c.shouldLog(LogLevelDebug) {
-			c.log(LogLevelDebug, "Using default connection config", map[string]interface{}{"User": c.config.User})
+			var ld LogData
+			ld.Add("User", c.config.User)
+			c.log(LogLevelDebug, "Using default connection config", ld)
 		}
 	}
 
 	if c.config.Port == 0 {
 		c.config.Port = 5432
 		if c.shouldLog(LogLevelDebug) {
-			c.log(LogLevelDebug, "Using default connection config", map[string]interface{}{"Port": c.config.Port})
+			var ld LogData
+			ld.Add("Port", c.config.Port)
+			c.log(LogLevelDebug, "Using default connection config", ld)
 		}
 	}
 
@@ -261,19 +265,26 @@ func connect(config ConnConfig, connInfo *pgtype.ConnInfo) (c *Conn, err error) 
 	}
 
 	if c.shouldLog(LogLevelInfo) {
-		c.log(LogLevelInfo, "Dialing PostgreSQL server", map[string]interface{}{"network": network, "address": address})
+		var ld LogData
+		ld.Add("network", network)
+		ld.Add("address", address)
+		c.log(LogLevelInfo, "Dialing PostgreSQL server", ld)
 	}
 	err = c.connect(config, network, address, config.TLSConfig)
 	if err != nil && config.UseFallbackTLS {
 		if c.shouldLog(LogLevelInfo) {
-			c.log(LogLevelInfo, "connect with TLSConfig failed, trying FallbackTLSConfig", map[string]interface{}{"err": err})
+			var ld LogData
+			ld.Add("err", err)
+			c.log(LogLevelInfo, "connect with TLSConfig failed, trying FallbackTLSConfig", ld)
 		}
 		err = c.connect(config, network, address, config.FallbackTLSConfig)
 	}
 
 	if err != nil {
 		if c.shouldLog(LogLevelError) {
-			c.log(LogLevelError, "connect failed", map[string]interface{}{"err": err})
+			var ld LogData
+			ld.Add("err", err)
+			c.log(LogLevelError, "connect failed", ld)
 		}
 		return nil, err
 	}
@@ -451,19 +462,25 @@ func (c *Conn) Close() (err error) {
 
 	err = c.conn.SetDeadline(time.Time{})
 	if err != nil && c.shouldLog(LogLevelWarn) {
-		c.log(LogLevelWarn, "failed to clear deadlines to send close message", map[string]interface{}{"err": err})
+		var ld LogData
+		ld.Add("err", err)
+		c.log(LogLevelWarn, "failed to clear deadlines to send close message", ld)
 		return err
 	}
 
 	_, err = c.conn.Write([]byte{'X', 0, 0, 0, 4})
 	if err != nil && c.shouldLog(LogLevelWarn) {
-		c.log(LogLevelWarn, "failed to send terminate message", map[string]interface{}{"err": err})
+		var ld LogData
+		ld.Add("err", err)
+		c.log(LogLevelWarn, "failed to send terminate message", ld)
 		return err
 	}
 
 	err = c.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if err != nil && c.shouldLog(LogLevelWarn) {
-		c.log(LogLevelWarn, "failed to set read deadline to finish closing", map[string]interface{}{"err": err})
+		var ld LogData
+		ld.Add("err", err)
+		c.log(LogLevelWarn, "failed to set read deadline to finish closing", ld)
 		return err
 	}
 
@@ -783,7 +800,11 @@ func (c *Conn) prepareEx(name, sql string, opts *PrepareExOptions) (ps *Prepared
 	if c.shouldLog(LogLevelError) {
 		defer func() {
 			if err != nil {
-				c.log(LogLevelError, "prepareEx failed", map[string]interface{}{"err": err, "name": name, "sql": sql})
+				var ld LogData
+				ld.Add("err", err)
+				ld.Add("name", name)
+				ld.Add("sql", sql)
+				c.log(LogLevelError, "prepareEx failed", ld)
 			}
 		}()
 	}
@@ -1336,15 +1357,13 @@ func (c *Conn) shouldLog(lvl int) bool {
 	return c.logger != nil && c.logLevel >= lvl
 }
 
-func (c *Conn) log(lvl LogLevel, msg string, data map[string]interface{}) {
-	if data == nil {
-		data = map[string]interface{}{}
-	}
+func (c *Conn) log(lvl LogLevel, msg string, ld LogData) {
 	if c.pid != 0 {
-		data["pid"] = c.pid
+		// add pid to the front
+		ld = append([]KV{{Key: "pid", Value: c.pid}}, ld...)
 	}
 
-	c.logger.Log(lvl, msg, data)
+	c.logger.Log(lvl, msg, ld)
 }
 
 // SetLogger replaces the current logger and returns the previous logger.
@@ -1449,14 +1468,23 @@ func (c *Conn) ExecEx(ctx context.Context, sql string, options *QueryExOptions, 
 	commandTag, err := c.execEx(ctx, sql, options, arguments...)
 	if err != nil {
 		if c.shouldLog(LogLevelError) {
-			c.log(LogLevelError, "Exec", map[string]interface{}{"sql": sql, "args": logQueryArgs(arguments), "err": err})
+			var ld LogData
+			ld.Add("sql", sql)
+			ld.Add("err", err)
+			ld.Add("args", logQueryArgs(arguments))
+			c.log(LogLevelError, "Exec", ld)
 		}
 		return commandTag, err
 	}
 
 	if c.shouldLog(LogLevelInfo) {
 		endTime := time.Now()
-		c.log(LogLevelInfo, "Exec", map[string]interface{}{"sql": sql, "args": logQueryArgs(arguments), "time": endTime.Sub(startTime), "commandTag": commandTag})
+		var ld LogData
+		ld.Add("time", endTime.Sub(startTime))
+		ld.Add("commandTag", commandTag)
+		ld.Add("sql", sql)
+		ld.Add("args", logQueryArgs(arguments))
+		c.log(LogLevelInfo, "Exec", ld)
 	}
 
 	return commandTag, err

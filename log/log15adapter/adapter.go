@@ -24,10 +24,10 @@ func NewLogger(l Log15Logger) *Logger {
 	return &Logger{l: l}
 }
 
-func (l *Logger) Log(level pgx.LogLevel, msg string, data map[string]interface{}) {
-	logArgs := make([]interface{}, 0, len(data))
-	for k, v := range data {
-		logArgs = append(logArgs, k, v)
+func (l *Logger) Log(level pgx.LogLevel, msg string, ld pgx.LogData) {
+	logArgs := make([]interface{}, 0, len(ld))
+	for _, v := range ld {
+		logArgs = append(logArgs, v.Key, v.Value)
 	}
 
 	switch level {

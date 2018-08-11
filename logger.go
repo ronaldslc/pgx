@@ -41,10 +41,21 @@ func (ll LogLevel) String() string {
 	}
 }
 
+type LogData []KV
+
+func (l *LogData) Add(key string, data interface{}) {
+	*l = append(*l, KV{Key: key, Value: data})
+}
+
+type KV struct {
+	Key   string
+	Value interface{}
+}
+
 // Logger is the interface used to get logging from pgx internals.
 type Logger interface {
 	// Log a message at the given level with data key/value pairs. data may be nil.
-	Log(level LogLevel, msg string, data map[string]interface{})
+	Log(level LogLevel, msg string, ld LogData)
 }
 
 // LogLevelFromString converts log level string to constant

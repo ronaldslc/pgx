@@ -1776,17 +1776,17 @@ func TestCatchSimultaneousConnectionQueryAndExec(t *testing.T) {
 }
 
 type testLog struct {
-	lvl  pgx.LogLevel
-	msg  string
-	data map[string]interface{}
+	lvl pgx.LogLevel
+	msg string
+	ld  pgx.LogData
 }
 
 type testLogger struct {
 	logs []testLog
 }
 
-func (l *testLogger) Log(level pgx.LogLevel, msg string, data map[string]interface{}) {
-	l.logs = append(l.logs, testLog{lvl: level, msg: msg, data: data})
+func (l *testLogger) Log(level pgx.LogLevel, msg string, ld pgx.LogData) {
+	l.logs = append(l.logs, testLog{lvl: level, msg: msg, ld: ld})
 }
 
 func TestSetLogger(t *testing.T) {

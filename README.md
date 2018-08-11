@@ -25,6 +25,7 @@ This fork...
 * Took master branch's BPChar into V3
 * Allow []fmt.Stringer in varchar and text array
 * Took master branch's UUID array into V3  
+* Alters Logger to log with consistency (not using data map)
 
 ## Features
 
