@@ -94,7 +94,7 @@ func (c *Conn) BeginEx(ctx context.Context, txOptions *TxOptions) (*Tx, error) {
 		return nil, err
 	}
 
-	return &Tx{conn: c}, nil
+	return &Tx{conn: c, LocalStore: make(map[string]interface{})}, nil
 }
 
 // Tx represents a database transaction.
@@ -102,11 +102,13 @@ func (c *Conn) BeginEx(ctx context.Context, txOptions *TxOptions) (*Tx, error) {
 // All Tx methods return ErrTxClosed if Commit or Rollback has already been
 // called on the Tx.
 type Tx struct {
-	conn       *Conn
-	connPool   *ConnPool
-	err        error
-	status     int8
-	afterClose func(*Tx)
+	conn         *Conn
+	connPool     *ConnPool
+	err          error
+	status       int8
+	beforeCommit func(*Tx)
+	afterClose   func(*Tx)
+	LocalStore   map[string]interface{} // transaction based storage in case we need to store local states regarding the transaction
 }
 
 // Commit commits the transaction
@@ -118,6 +120,10 @@ func (tx *Tx) Commit() error {
 func (tx *Tx) CommitEx(ctx context.Context) error {
 	if tx.status != TxStatusInProgress {
 		return ErrTxClosed
+	}
+
+	if tx.beforeCommit != nil {
+		tx.beforeCommit(tx)
 	}
 
 	commandTag, err := tx.conn.ExecEx(ctx, "commit", nil)
@@ -230,6 +236,20 @@ func (tx *Tx) Status() int8 {
 // Err returns the final error state, if any, of calling Commit or Rollback.
 func (tx *Tx) Err() error {
 	return tx.err
+}
+
+// AfterClose adds f to a LIFO queue of functions that will be called when
+// Commit is called.
+func (tx *Tx) BeforeCommit(f func(*Tx)) {
+	if tx.beforeCommit == nil {
+		tx.beforeCommit = f
+	} else {
+		prevFn := tx.beforeCommit
+		tx.beforeCommit = func(tx *Tx) {
+			f(tx)
+			prevFn(tx)
+		}
+	}
 }
 
 // AfterClose adds f to a LIFO queue of functions that will be called when

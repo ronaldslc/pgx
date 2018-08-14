@@ -26,6 +26,8 @@ This fork...
 * Allow []fmt.Stringer in varchar and text array
 * Took master branch's UUID array into V3  
 * Alters Logger to log with consistency (not using data map)
+* Addition of tx.BeforeCommit
+* Addition of tx.LocalStore
 
 ## Features
 
