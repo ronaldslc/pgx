@@ -238,8 +238,8 @@ func (tx *Tx) Err() error {
 	return tx.err
 }
 
-// AfterClose adds f to a LIFO queue of functions that will be called when
-// Commit is called.
+// BeforeCommit adds f to a LIFO queue of functions that will be called when
+// just before commit is executed via the Commit function
 func (tx *Tx) BeforeCommit(f func(*Tx)) {
 	if tx.beforeCommit == nil {
 		tx.beforeCommit = f
