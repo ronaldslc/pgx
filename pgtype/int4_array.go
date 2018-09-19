@@ -16,6 +16,18 @@ type Int4Array struct {
 
 func (dst *Int4Array) Set(src interface{}) error {
 	switch value := src.(type) {
+	case []Int4:
+		if value == nil {
+			*dst = Int4Array{Status: Null}
+		} else if len(value) == 0 {
+			*dst = Int4Array{Status: Present}
+		} else {
+			*dst = Int4Array{
+				Elements:   value,
+				Dimensions: []ArrayDimension{{Length: int32(len(value)), LowerBound: 1}},
+				Status:     Present,
+			}
+		}
 	case []int:
 		if value == nil {
 			*dst = Int4Array{Status: Null}
