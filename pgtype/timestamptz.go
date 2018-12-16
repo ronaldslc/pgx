@@ -3,6 +3,8 @@ package pgtype
 import (
 	"database/sql/driver"
 	"encoding/binary"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/pkg/errors"
@@ -26,7 +28,7 @@ type Timestamptz struct {
 }
 
 func (dst *Timestamptz) UnmarshalJSON(src []byte) error {
-	if src == nil {
+	if src == nil || string(src) == "null" {
 		*dst = Timestamptz{Status: Null}
 		return nil
 	}
@@ -38,30 +40,21 @@ func (dst *Timestamptz) UnmarshalJSON(src []byte) error {
 	case "-infinity":
 		*dst = Timestamptz{Status: Present, InfinityModifier: -Infinity}
 	default:
-		var format string
-		if sbuf[len(sbuf)-9] == '-' || sbuf[len(sbuf)-9] == '+' {
-			format = pgTimestamptzSecondFormat
-		} else if sbuf[len(sbuf)-6] == '-' || sbuf[len(sbuf)-6] == '+' {
-			format = pgTimestamptzMinuteFormat
-		} else {
-			format = pgTimestamptzHourFormat
-		}
-
-		tim, err := time.Parse(format, sbuf)
-		if err != nil {
+		var output time.Time
+		if err := json.Unmarshal(src, &output); err != nil {
 			return err
 		}
 
-		*dst = Timestamptz{Time: tim, Status: Present}
+		*dst = Timestamptz{Time: output, Status: Present}
 	}
 
 	return nil
 }
 
-func (src *Timestamptz) MarshalJSON() ([]byte, error) {
+func (src Timestamptz) MarshalJSON() ([]byte, error) {
 	switch src.Status {
 	case Null:
-		return nil, nil
+		return []byte("null"), nil
 	case Undefined:
 		return nil, errUndefined
 	}
@@ -70,14 +63,14 @@ func (src *Timestamptz) MarshalJSON() ([]byte, error) {
 
 	switch src.InfinityModifier {
 	case None:
-		s = src.Time.UTC().Format(pgTimestamptzSecondFormat)
+		return json.Marshal(src.Time)
 	case Infinity:
 		s = "infinity"
 	case NegativeInfinity:
 		s = "-infinity"
 	}
 
-	return []byte(s), nil
+	return []byte(fmt.Sprintf(`"%s"`, s)), nil
 }
 
 func (dst *Timestamptz) Set(src interface{}) error {
