@@ -28,6 +28,7 @@ This fork...
 * Alters Logger to log with consistency (not using data map)
 * Addition of tx.BeforeCommit
 * Addition of tx.LocalStore
+* pgtype.timestamptz provides UnmarshalJSON and MarshalJSON
 
 ## Features
 

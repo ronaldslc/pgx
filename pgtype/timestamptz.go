@@ -25,6 +25,61 @@ type Timestamptz struct {
 	InfinityModifier InfinityModifier
 }
 
+func (dst *Timestamptz) UnmarshalJSON(src []byte) error {
+	if src == nil {
+		*dst = Timestamptz{Status: Null}
+		return nil
+	}
+
+	sbuf := string(src[1 : len(src)-1])
+	switch sbuf {
+	case "infinity":
+		*dst = Timestamptz{Status: Present, InfinityModifier: Infinity}
+	case "-infinity":
+		*dst = Timestamptz{Status: Present, InfinityModifier: -Infinity}
+	default:
+		var format string
+		if sbuf[len(sbuf)-9] == '-' || sbuf[len(sbuf)-9] == '+' {
+			format = pgTimestamptzSecondFormat
+		} else if sbuf[len(sbuf)-6] == '-' || sbuf[len(sbuf)-6] == '+' {
+			format = pgTimestamptzMinuteFormat
+		} else {
+			format = pgTimestamptzHourFormat
+		}
+
+		tim, err := time.Parse(format, sbuf)
+		if err != nil {
+			return err
+		}
+
+		*dst = Timestamptz{Time: tim, Status: Present}
+	}
+
+	return nil
+}
+
+func (src *Timestamptz) MarshalJSON() ([]byte, error) {
+	switch src.Status {
+	case Null:
+		return nil, nil
+	case Undefined:
+		return nil, errUndefined
+	}
+
+	var s string
+
+	switch src.InfinityModifier {
+	case None:
+		s = src.Time.UTC().Format(pgTimestamptzSecondFormat)
+	case Infinity:
+		s = "infinity"
+	case NegativeInfinity:
+		s = "-infinity"
+	}
+
+	return []byte(s), nil
+}
+
 func (dst *Timestamptz) Set(src interface{}) error {
 	if src == nil {
 		*dst = Timestamptz{Status: Null}
