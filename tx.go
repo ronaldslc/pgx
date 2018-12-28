@@ -94,7 +94,9 @@ func (c *Conn) BeginEx(ctx context.Context, txOptions *TxOptions) (*Tx, error) {
 		return nil, err
 	}
 
-	return &Tx{conn: c, LocalStore: make(map[string]interface{})}, nil
+	tx := &Tx{conn: c, LocalStore: make(map[string]interface{})}
+	c.tx = tx
+	return tx, nil
 }
 
 // Tx represents a database transaction.
@@ -146,6 +148,7 @@ func (tx *Tx) CommitEx(ctx context.Context) error {
 	if tx.afterClose != nil {
 		tx.afterClose(tx)
 	}
+	tx.conn.tx = nil // whether it succeeded or not, remove tx from conn's reference
 	return tx.err
 }
 
@@ -175,6 +178,7 @@ func (tx *Tx) Rollback() error {
 	if tx.afterClose != nil {
 		tx.afterClose(tx)
 	}
+	tx.conn.tx = nil // whether it succeeded or not, remove tx from conn's reference
 	return tx.err
 }
 

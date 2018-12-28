@@ -180,7 +180,12 @@ func (p *ConnPool) Release(conn *Conn) {
 	}
 
 	if conn.txStatus != 'I' {
-		conn.Exec("rollback")
+		if conn.tx != nil {
+			// use the tx rollback if it exist to ensure AfterClose is actioned
+			conn.tx.Rollback()
+		} else {
+			conn.Exec("rollback")
+		}
 	}
 
 	if len(conn.channels) > 0 {

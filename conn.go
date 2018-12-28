@@ -113,6 +113,7 @@ type Conn struct {
 	RuntimeParams      map[string]string // parameters that have been reported by the server
 	config             ConnConfig        // config used when establishing this connection
 	txStatus           byte
+	tx                 *Tx // holds reference to a transaction if the connection is using one
 	preparedStatements map[string]*PreparedStatement
 	channels           map[string]struct{}
 	notifications      []*Notification
