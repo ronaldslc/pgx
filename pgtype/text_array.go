@@ -17,6 +17,18 @@ type TextArray struct {
 
 func (dst *TextArray) Set(src interface{}) error {
 	switch value := src.(type) {
+	case []Text:
+		if value == nil {
+			*dst = TextArray{Status: Null}
+		} else if len(value) == 0 {
+			*dst = TextArray{Status: Present}
+		} else {
+			*dst = TextArray{
+				Elements:   value,
+				Dimensions: []ArrayDimension{{Length: int32(len(value)), LowerBound: 1}},
+				Status:     Present,
+			}
+		}
 	case []fmt.Stringer:
 		if value == nil {
 			*dst = TextArray{Status: Null}
