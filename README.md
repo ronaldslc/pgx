@@ -1,21 +1,5 @@
-[![](https://godoc.org/github.com/jackc/pgx?status.svg)](https://godoc.org/github.com/jackc/pgx)
-[![Build Status](https://travis-ci.org/jackc/pgx.png)](https://travis-ci.org/jackc/pgx)
-
-# pgx - PostgreSQL Driver and Toolkit
-
-pgx is a pure Go driver and toolkit for PostgreSQL. pgx is different from other drivers such as [pq](http://godoc.org/github.com/lib/pq) because, while it can operate as a database/sql compatible driver, pgx is also usable directly. It offers a native interface similar to database/sql that offers better performance and more features.
-
-
-```go
-var name string
-var weight int64
-err := conn.QueryRow("select name, weight from widgets where id=$1", 42).Scan(&name, &weight)
-if err != nil {
-    return err
-}
-```
 ## Fork Information
-This fork...
+This is a fork of the v3 branch of jackc/pgx!
 * Replaces prepared statement names with an incremented identifier to remove the limitations of having [only 63 characters in prepared statement names](https://www.postgresql.org/message-id/CAKFQuwY1KmJ0tQuNVhd%3DGVy4-VQrBVfEaawNxySomBbP7mxRkQ@mail.gmail.com).
 * Restores tx.AfterClose
 * pgtype.Varchar provides UnmarshalJSON
