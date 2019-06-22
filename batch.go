@@ -2,7 +2,6 @@ package pgx
 
 import (
 	"context"
-
 	"github.com/ronaldslc/pgx/pgproto3"
 	"github.com/ronaldslc/pgx/pgtype"
 )
@@ -82,8 +81,18 @@ func (b *Batch) Send(ctx context.Context, txOptions *TxOptions) error {
 			psName = ps.Id
 			psParameterOIDs = ps.ParameterOIDs
 		} else {
-			psParameterOIDs = bi.parameterOIDs
-			buf = appendParse(buf, "", bi.query, psParameterOIDs)
+			if st, ok := b.conn.config.LazyPreparedStatements[bi.query]; ok {
+				ps, err := b.conn.prepareEx(bi.query, st, nil)
+				if err != nil {
+					return err
+				}
+
+				psName = ps.Id
+				psParameterOIDs = ps.ParameterOIDs
+			} else {
+				psParameterOIDs = bi.parameterOIDs
+				buf = appendParse(buf, "", bi.query, psParameterOIDs)
+			}
 		}
 
 		var err error

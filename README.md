@@ -13,6 +13,7 @@ This is a fork of the v3 branch of jackc/pgx!
 * Addition of tx.BeforeCommit
 * Addition of tx.LocalStore
 * pgtype.timestamptz provides UnmarshalJSON and MarshalJSON
+* Has ability to lazy prepare
 
 ## Features
 

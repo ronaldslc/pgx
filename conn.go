@@ -70,19 +70,20 @@ type DialFunc func(network, addr string) (net.Conn, error)
 
 // ConnConfig contains all the options used to establish a connection.
 type ConnConfig struct {
-	Host              string // host (e.g. localhost) or path to unix domain socket directory (e.g. /private/tmp)
-	Port              uint16 // default: 5432
-	Database          string
-	User              string // default: OS user name
-	Password          string
-	TLSConfig         *tls.Config // config for TLS connection -- nil disables TLS
-	UseFallbackTLS    bool        // Try FallbackTLSConfig if connecting with TLSConfig fails. Used for preferring TLS, but allowing unencrypted, or vice-versa
-	FallbackTLSConfig *tls.Config // config for fallback TLS connection (only used if UseFallBackTLS is true)-- nil disables TLS
-	Logger            Logger
-	LogLevel          int
-	Dial              DialFunc
-	RuntimeParams     map[string]string // Run-time parameters to set on connection as session default values (e.g. search_path or application_name)
-	OnNotice          NoticeHandler     // Callback function called when a notice response is received.
+	Host                   string // host (e.g. localhost) or path to unix domain socket directory (e.g. /private/tmp)
+	Port                   uint16 // default: 5432
+	Database               string
+	User                   string // default: OS user name
+	Password               string
+	TLSConfig              *tls.Config // config for TLS connection -- nil disables TLS
+	UseFallbackTLS         bool        // Try FallbackTLSConfig if connecting with TLSConfig fails. Used for preferring TLS, but allowing unencrypted, or vice-versa
+	FallbackTLSConfig      *tls.Config // config for fallback TLS connection (only used if UseFallBackTLS is true)-- nil disables TLS
+	Logger                 Logger
+	LogLevel               int
+	Dial                   DialFunc
+	RuntimeParams          map[string]string // Run-time parameters to set on connection as session default values (e.g. search_path or application_name)
+	OnNotice               NoticeHandler     // Callback function called when a notice response is received.
+	LazyPreparedStatements map[string]string // a map of lazy prepared statements
 }
 
 func (cc *ConnConfig) networkAddress() (network, address string) {
@@ -105,24 +106,25 @@ func (cc *ConnConfig) networkAddress() (network, address string) {
 // Use ConnPool to manage access to multiple database connections from multiple
 // goroutines.
 type Conn struct {
-	conn               net.Conn  // the underlying TCP or unix domain socket connection
-	lastActivityTime   time.Time // the last time the connection was used
-	wbuf               []byte
-	pid                uint32            // backend pid
-	secretKey          uint32            // key to use to send a cancel query message to the server
-	RuntimeParams      map[string]string // parameters that have been reported by the server
-	config             ConnConfig        // config used when establishing this connection
-	txStatus           byte
-	tx                 *Tx // holds reference to a transaction if the connection is using one
-	preparedStatements map[string]*PreparedStatement
-	channels           map[string]struct{}
-	notifications      []*Notification
-	logger             Logger
-	logLevel           int
-	fp                 *fastpath
-	poolResetCount     int
-	preallocatedRows   []Rows
-	onNotice           NoticeHandler
+	conn                   net.Conn  // the underlying TCP or unix domain socket connection
+	lastActivityTime       time.Time // the last time the connection was used
+	wbuf                   []byte
+	pid                    uint32            // backend pid
+	secretKey              uint32            // key to use to send a cancel query message to the server
+	RuntimeParams          map[string]string // parameters that have been reported by the server
+	config                 ConnConfig        // config used when establishing this connection
+	txStatus               byte
+	tx                     *Tx               // holds reference to a transaction if the connection is using one
+	lazyPreparedStatements map[string]string // a map of lazy prepared statements
+	preparedStatements     map[string]*PreparedStatement
+	channels               map[string]struct{}
+	notifications          []*Notification
+	logger                 Logger
+	logLevel               int
+	fp                     *fastpath
+	poolResetCount         int
+	preallocatedRows       []Rows
+	onNotice               NoticeHandler
 
 	mux          sync.Mutex
 	status       byte // One of connStatus* constants
@@ -1040,7 +1042,16 @@ func (c *Conn) sendQuery(sql string, arguments ...interface{}) (err error) {
 	if ps, present := c.preparedStatements[sql]; present {
 		return c.sendPreparedQuery(ps, arguments...)
 	}
-	return c.sendSimpleQuery(sql, arguments...)
+
+	if st, ok := c.config.LazyPreparedStatements[sql]; ok {
+		ps, err := c.prepareEx(sql, st, nil)
+		if err != nil {
+			return err
+		}
+		return c.sendPreparedQuery(ps, arguments...)
+	} else {
+		return c.sendSimpleQuery(sql, arguments...)
+	}
 }
 
 func (c *Conn) sendSimpleQuery(sql string, args ...interface{}) error {
@@ -1523,10 +1534,16 @@ func (c *Conn) execEx(ctx context.Context, sql string, options *QueryExOptions, 
 		if len(arguments) > 0 {
 			ps, ok := c.preparedStatements[sql]
 			if !ok {
-				var err error
-				ps, err = c.prepareEx("", sql, nil)
-				if err != nil {
-					return "", err
+				if st, ok := c.config.LazyPreparedStatements[sql]; ok {
+					if ps, err = c.prepareEx(sql, st, nil); err != nil {
+						return "", err
+					}
+				} else {
+					var err error
+					ps, err = c.prepareEx("", sql, nil)
+					if err != nil {
+						return "", err
+					}
 				}
 			}
 

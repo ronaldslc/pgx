@@ -453,11 +453,18 @@ func (c *Conn) QueryEx(ctx context.Context, sql string, options *QueryExOptions,
 
 	ps, ok := c.preparedStatements[sql]
 	if !ok {
-		var err error
-		ps, err = c.prepareEx("", sql, nil)
-		if err != nil {
-			rows.fatal(err)
-			return rows, rows.err
+		if st, ok := c.config.LazyPreparedStatements[sql]; ok {
+			if ps, err = c.prepareEx(sql, st, nil); err != nil {
+				rows.fatal(err)
+				return rows, rows.err
+			}
+		} else {
+			var err error
+			ps, err = c.prepareEx("", sql, nil)
+			if err != nil {
+				rows.fatal(err)
+				return rows, rows.err
+			}
 		}
 	}
 	rows.sql = sql
