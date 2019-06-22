@@ -454,7 +454,8 @@ func (c *Conn) QueryEx(ctx context.Context, sql string, options *QueryExOptions,
 	ps, ok := c.preparedStatements[sql]
 	if !ok {
 		if st, ok := c.config.LazyPreparedStatements[sql]; ok {
-			if ps, err = c.prepareEx(sql, st, nil); err != nil {
+			ps, err = c.prepareEx(sql, st, nil)
+			if err != nil {
 				rows.fatal(err)
 				return rows, rows.err
 			}

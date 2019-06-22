@@ -1534,12 +1534,13 @@ func (c *Conn) execEx(ctx context.Context, sql string, options *QueryExOptions, 
 		if len(arguments) > 0 {
 			ps, ok := c.preparedStatements[sql]
 			if !ok {
+				var err error
 				if st, ok := c.config.LazyPreparedStatements[sql]; ok {
-					if ps, err = c.prepareEx(sql, st, nil); err != nil {
+					ps, err = c.prepareEx(sql, st, nil)
+					if err != nil {
 						return "", err
 					}
 				} else {
-					var err error
 					ps, err = c.prepareEx("", sql, nil)
 					if err != nil {
 						return "", err
