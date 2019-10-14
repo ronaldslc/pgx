@@ -703,10 +703,17 @@ func TestEmptyArrayDecoding(t *testing.T) {
 	}
 	defer rows.Close()
 
-	for rows.Next() {
-		err = rows.Scan(&n, &val)
-		if err != nil {
-			t.Errorf(`error reading array: %v`, err)
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
+		}
+
+		for i := 0; i < rc; i++ {
+			err = rows.Scan(&n, &val)
+			if err != nil {
+				t.Errorf(`error reading array: %v`, err)
+			}
 		}
 	}
 

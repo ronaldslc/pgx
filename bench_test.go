@@ -629,18 +629,25 @@ func BenchmarkMultipleQueriesNonBatch(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			for k := 0; rows.Next(); k++ {
-				var n int
-				if err := rows.Scan(&n); err != nil {
-					b.Fatal(err)
+			for {
+				rc := rows.Next()
+				if rc <= 0 {
+					break
 				}
-				if n != k {
-					b.Fatalf("n => %v, want %v", n, k)
-				}
-			}
 
-			if rows.Err() != nil {
-				b.Fatal(rows.Err())
+				for k := 0; k < rc; k++ {
+					var n int
+					if err := rows.Scan(&n); err != nil {
+						b.Fatal(err)
+					}
+					if n != k {
+						b.Fatalf("n => %v, want %v", n, k)
+					}
+				}
+
+				if rows.Err() != nil {
+					b.Fatal(rows.Err())
+				}
 			}
 		}
 	}
@@ -678,18 +685,25 @@ func BenchmarkMultipleQueriesBatch(b *testing.B) {
 				b.Fatal(err)
 			}
 
-			for k := 0; rows.Next(); k++ {
-				var n int
-				if err := rows.Scan(&n); err != nil {
-					b.Fatal(err)
+			for {
+				rc := rows.Next()
+				if rc <= 0 {
+					break
 				}
-				if n != k {
-					b.Fatalf("n => %v, want %v", n, k)
-				}
-			}
 
-			if rows.Err() != nil {
-				b.Fatal(rows.Err())
+				for k := 0; k < rc; k++ {
+					var n int
+					if err := rows.Scan(&n); err != nil {
+						b.Fatal(err)
+					}
+					if n != k {
+						b.Fatalf("n => %v, want %v", n, k)
+					}
+				}
+
+				if rows.Err() != nil {
+					b.Fatal(rows.Err())
+				}
 			}
 		}
 

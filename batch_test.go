@@ -77,7 +77,9 @@ func TestConnBeginBatch(t *testing.T) {
 	var id int32
 	var description string
 	var amount int32
-	if !rows.Next() {
+
+	rc := rows.Next()
+	if rc <= 0 {
 		t.Fatal("expected a row to be available")
 	}
 	if err := rows.Scan(&id, &description, &amount); err != nil {
@@ -92,8 +94,12 @@ func TestConnBeginBatch(t *testing.T) {
 	if amount != 1 {
 		t.Errorf("amount => %v, want %v", amount, 1)
 	}
+	rc--
 
-	if !rows.Next() {
+	if rc <= 0 {
+		rc = rows.Next()
+	}
+	if rc <= 0 {
 		t.Fatal("expected a row to be available")
 	}
 	if err := rows.Scan(&id, &description, &amount); err != nil {
@@ -108,8 +114,12 @@ func TestConnBeginBatch(t *testing.T) {
 	if amount != 2 {
 		t.Errorf("amount => %v, want %v", amount, 2)
 	}
+	rc--
 
-	if !rows.Next() {
+	if rc <= 0 {
+		rc = rows.Next()
+	}
+	if rc <= 0 {
 		t.Fatal("expected a row to be available")
 	}
 	if err := rows.Scan(&id, &description, &amount); err != nil {
@@ -124,10 +134,7 @@ func TestConnBeginBatch(t *testing.T) {
 	if amount != 3 {
 		t.Errorf("amount => %v, want %v", amount, 3)
 	}
-
-	if rows.Next() {
-		t.Fatal("did not expect a row to be available")
-	}
+	rc--
 
 	if rows.Err() != nil {
 		t.Fatal(rows.Err())
@@ -182,18 +189,27 @@ func TestConnBeginBatchWithPreparedStatement(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		for k := 0; rows.Next(); k++ {
-			var n int
-			if err := rows.Scan(&n); err != nil {
-				t.Fatal(err)
+		total := 0
+		for {
+			rc := rows.Next()
+			if rc <= 0 {
+				break
 			}
-			if n != k {
-				t.Fatalf("n => %v, want %v", n, k)
-			}
-		}
 
-		if rows.Err() != nil {
-			t.Fatal(rows.Err())
+			for k := 0; k < rc; k++ {
+				var n int
+				if err := rows.Scan(&n); err != nil {
+					t.Fatal(err)
+				}
+				if n != total {
+					t.Fatalf("n => %v, want %v", n, total)
+				}
+				total++
+			}
+
+			if rows.Err() != nil {
+				t.Fatal(rows.Err())
+			}
 		}
 	}
 
@@ -348,18 +364,28 @@ func TestConnBeginBatchCloseRowsPartiallyRead(t *testing.T) {
 		t.Error(err)
 	}
 
-	for i := 0; i < 3; i++ {
-		if !rows.Next() {
-			t.Error("expected a row to be available")
+	total := 0
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
 		}
 
-		var n int
-		if err := rows.Scan(&n); err != nil {
-			t.Error(err)
+		for i := 0; i < rc; i++ {
+			var n int
+			if err := rows.Scan(&n); err != nil {
+				t.Error(err)
+			}
+			if n != total + i {
+				t.Errorf("n => %v, want %v", n, total + i)
+			}
 		}
-		if n != i {
-			t.Errorf("n => %v, want %v", n, i)
-		}
+
+		total += rc
+	}
+
+	if total < 3 {
+		t.Error("expected a row to be available")
 	}
 
 	rows.Close()
@@ -369,18 +395,24 @@ func TestConnBeginBatchCloseRowsPartiallyRead(t *testing.T) {
 		t.Error(err)
 	}
 
-	for i := 0; rows.Next(); i++ {
-		var n int
-		if err := rows.Scan(&n); err != nil {
-			t.Error(err)
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
 		}
-		if n != i {
-			t.Errorf("n => %v, want %v", n, i)
+		for i := 0; i < rc; i++ {
+			var n int
+			if err := rows.Scan(&n); err != nil {
+				t.Error(err)
+			}
+			if n != i {
+				t.Errorf("n => %v, want %v", n, i)
+			}
 		}
-	}
 
-	if rows.Err() != nil {
-		t.Error(rows.Err())
+		if rows.Err() != nil {
+			t.Error(rows.Err())
+		}
 	}
 
 	err = batch.Close()
@@ -419,13 +451,20 @@ func TestConnBeginBatchQueryError(t *testing.T) {
 		t.Error(err)
 	}
 
-	for i := 0; rows.Next(); i++ {
-		var n int
-		if err := rows.Scan(&n); err != nil {
-			t.Error(err)
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
 		}
-		if n != i {
-			t.Errorf("n => %v, want %v", n, i)
+
+		for i := 0; i < rc; i++ {
+			var n int
+			if err := rows.Scan(&n); err != nil {
+				t.Error(err)
+			}
+			if n != i {
+				t.Errorf("n => %v, want %v", n, i)
+			}
 		}
 	}
 

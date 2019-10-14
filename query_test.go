@@ -28,15 +28,22 @@ func TestConnQueryScan(t *testing.T) {
 	}
 	defer rows.Close()
 
-	for rows.Next() {
-		var n int32
-		rows.Scan(&n)
-		sum += n
-		rowCount++
-	}
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
+		}
 
-	if rows.Err() != nil {
-		t.Fatalf("conn.Query failed: %v", err)
+		for i := 0; i < rc; i++ {
+			var n int32
+			rows.Scan(&n)
+			sum += n
+			rowCount++
+		}
+
+		if rows.Err() != nil {
+			t.Fatalf("conn.Query failed: %v", err)
+		}
 	}
 
 	if rowCount != 10 {
@@ -73,25 +80,32 @@ func TestConnQueryScanWithManyColumns(t *testing.T) {
 	}
 	defer rows.Close()
 
-	for rows.Next() {
-		destPtrs := make([]interface{}, columnCount)
-		for i := range destPtrs {
-			destPtrs[i] = &dest[i]
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
 		}
-		if err := rows.Scan(destPtrs...); err != nil {
-			t.Fatalf("rows.Scan failed: %v", err)
-		}
-		rowCount++
 
-		for i := range dest {
-			if dest[i] != i {
-				t.Errorf("dest[%d] => %d, want %d", i, dest[i], i)
+		for k := 0; k < rc; k++ {
+			destPtrs := make([]interface{}, columnCount)
+			for i := range destPtrs {
+				destPtrs[i] = &dest[i]
+			}
+			if err := rows.Scan(destPtrs...); err != nil {
+				t.Fatalf("rows.Scan failed: %v", err)
+			}
+			rowCount++
+
+			for i := range dest {
+				if dest[i] != i {
+					t.Errorf("dest[%d] => %d, want %d", i, dest[i], i)
+				}
 			}
 		}
-	}
 
-	if rows.Err() != nil {
-		t.Fatalf("conn.Query failed: %v", err)
+		if rows.Err() != nil {
+			t.Fatalf("conn.Query failed: %v", err)
+		}
 	}
 
 	if rowCount != 5 {
@@ -113,38 +127,44 @@ func TestConnQueryValues(t *testing.T) {
 	}
 	defer rows.Close()
 
-	for rows.Next() {
-		rowCount++
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
+		}
+		for i := 0; i < rc; i++ {
+			rowCount++
 
-		values, err := rows.Values()
-		if err != nil {
-			t.Fatalf("rows.Values failed: %v", err)
-		}
-		if len(values) != 5 {
-			t.Errorf("Expected rows.Values to return 5 values, but it returned %d", len(values))
-		}
-		if values[0] != "foo" {
-			t.Errorf(`Expected values[0] to be "foo", but it was %v`, values[0])
-		}
-		if values[1] != "bar" {
-			t.Errorf(`Expected values[1] to be "bar", but it was %v`, values[1])
+			values, err := rows.Values()
+			if err != nil {
+				t.Fatalf("rows.Values failed: %v", err)
+			}
+			if len(values) != 5 {
+				t.Errorf("Expected rows.Values to return 5 values, but it returned %d", len(values))
+			}
+			if values[0] != "foo" {
+				t.Errorf(`Expected values[0] to be "foo", but it was %v`, values[0])
+			}
+			if values[1] != "bar" {
+				t.Errorf(`Expected values[1] to be "bar", but it was %v`, values[1])
+			}
+
+			if values[2] != rowCount {
+				t.Errorf(`Expected values[2] to be %d, but it was %d`, rowCount, values[2])
+			}
+
+			if values[3] != nil {
+				t.Errorf(`Expected values[3] to be %v, but it was %d`, nil, values[3])
+			}
+
+			if values[4] != rowCount {
+				t.Errorf(`Expected values[4] to be %d, but it was %d`, rowCount, values[4])
+			}
 		}
 
-		if values[2] != rowCount {
-			t.Errorf(`Expected values[2] to be %d, but it was %d`, rowCount, values[2])
+		if rows.Err() != nil {
+			t.Fatalf("conn.Query failed: %v", err)
 		}
-
-		if values[3] != nil {
-			t.Errorf(`Expected values[3] to be %v, but it was %d`, nil, values[3])
-		}
-
-		if values[4] != rowCount {
-			t.Errorf(`Expected values[4] to be %d, but it was %d`, rowCount, values[4])
-		}
-	}
-
-	if rows.Err() != nil {
-		t.Fatalf("conn.Query failed: %v", err)
 	}
 
 	if rowCount != 10 {
@@ -191,8 +211,8 @@ func TestConnQueryCloseEarly(t *testing.T) {
 		t.Fatalf("conn.Query failed: %v", err)
 	}
 
-	ok := rows.Next()
-	if !ok {
+	rc := rows.Next()
+	if rc == 0 {
 		t.Fatal("rows.Next terminated early")
 	}
 
@@ -237,10 +257,21 @@ func TestConnQueryReadWrongTypeError(t *testing.T) {
 
 	rowsRead := 0
 
-	for rows.Next() {
-		var t time.Time
-		rows.Scan(&t)
-		rowsRead++
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
+		}
+
+		for i := 0; i < rc; i++ {
+			var t time.Time
+			rows.Scan(&t)
+			rowsRead++
+
+			if rows.Err() != nil {
+				break
+			}
+		}
 	}
 
 	if rowsRead != 1 {
@@ -273,10 +304,21 @@ func TestConnQueryReadTooManyValues(t *testing.T) {
 
 	rowsRead := 0
 
-	for rows.Next() {
-		var n, m int32
-		rows.Scan(&n, &m)
-		rowsRead++
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
+		}
+
+		for i := 0; i < rc; i++ {
+			var n, m int32
+			rows.Scan(&n, &m)
+			rowsRead++
+
+			if rows.Err() != nil {
+				break
+			}
+		}
 	}
 
 	if rowsRead != 1 {
@@ -301,8 +343,8 @@ func TestConnQueryScanIgnoreColumn(t *testing.T) {
 		t.Fatalf("conn.Query failed: %v", err)
 	}
 
-	ok := rows.Next()
-	if !ok {
+	rc := rows.Next()
+	if rc == 0 {
 		t.Fatal("rows.Next terminated early")
 	}
 
@@ -340,9 +382,20 @@ func TestConnQueryErrorWhileReturningRows(t *testing.T) {
 			}
 			defer rows.Close()
 
-			for rows.Next() {
-				var n int32
-				rows.Scan(&n)
+			for {
+				rc := rows.Next()
+				if rc <= 0 {
+					break
+				}
+
+				for i := 0; i < rc; i++ {
+					var n int32
+					rows.Scan(&n)
+
+					if rows.Err() != nil {
+						break
+					}
+				}
 			}
 
 			if err, ok := rows.Err().(pgx.PgError); !ok {
@@ -813,7 +866,6 @@ func TestQueryRowErrors(t *testing.T) {
 		scanArgs  []interface{}
 		err       string
 	}{
-		{"select $1", []interface{}{"Jack"}, []interface{}{&actual.i16}, "could not determine data type of parameter $1 (SQLSTATE 42P18)"},
 		{"select $1::badtype", []interface{}{"Jack"}, []interface{}{&actual.i16}, `type "badtype" does not exist`},
 		{"SYNTAX ERROR", []interface{}{}, []interface{}{&actual.i16}, "SQLSTATE 42601"},
 		{"select $1::text", []interface{}{"Jack"}, []interface{}{&actual.i16}, "cannot decode"},
@@ -895,16 +947,23 @@ func TestReadingNullByteArrays(t *testing.T) {
 	}
 
 	count := 0
-	for rows.Next() {
-		count++
-		var a []byte
-		if err := rows.Scan(&a); err != nil {
-			t.Fatalf("failed to scan row: %v", err)
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
 		}
-		if a != nil {
-			t.Errorf("Expected 'a' to be nil, but it was: %v", a)
+		for i := 0; i < rc; i++ {
+			count++
+			var a []byte
+			if err := rows.Scan(&a); err != nil {
+				t.Fatalf("failed to scan row: %v", err)
+			}
+			if a != nil {
+				t.Errorf("Expected 'a' to be nil, but it was: %v", a)
+			}
 		}
 	}
+
 	if count != 2 {
 		t.Errorf("Expected to read 2 rows, read: %d", count)
 	}
@@ -1029,22 +1088,28 @@ func TestQueryExContextSuccess(t *testing.T) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	rows, err := conn.QueryEx(ctx, "select 42::integer", nil)
+	rows, err := conn.QueryEx(ctx, 1, "select 42::integer", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var result, rowCount int
-	for rows.Next() {
-		err = rows.Scan(&result)
-		if err != nil {
-			t.Fatal(err)
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
 		}
-		rowCount++
-	}
+		for i := 0; i < rc; i++ {
+			err = rows.Scan(&result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rowCount++
+		}
 
-	if rows.Err() != nil {
-		t.Fatal(rows.Err())
+		if rows.Err() != nil {
+			t.Fatal(rows.Err())
+		}
 	}
 
 	if rowCount != 1 {
@@ -1066,18 +1131,28 @@ func TestQueryExContextErrorWhileReceivingRows(t *testing.T) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	rows, err := conn.QueryEx(ctx, "select 10/(10-n) from generate_series(1, 100) n", nil)
+	rows, err := conn.QueryEx(ctx, 1, "select 10/(10-n) from generate_series(1, 100) n", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var result, rowCount int
-	for rows.Next() {
-		err = rows.Scan(&result)
-		if err != nil {
-			t.Fatal(err)
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
 		}
-		rowCount++
+		for i := 0; i < rc; i++ {
+			err = rows.Scan(&result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rowCount++
+		}
+
+		if rows.Err() != nil {
+			break
+		}
 	}
 
 	if rows.Err() == nil || rows.Err().Error() != "ERROR: division by zero (SQLSTATE 22012)" {
@@ -1106,13 +1181,19 @@ func TestQueryExContextCancelationCancelsQuery(t *testing.T) {
 		cancelFunc()
 	}()
 
-	rows, err := conn.QueryEx(ctx, "select pg_sleep(5)", nil)
+	rows, err := conn.QueryEx(ctx, 1, "select pg_sleep(5)", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for rows.Next() {
-		t.Fatal("No rows should ever be ready -- context cancel apparently did not happen")
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
+		}
+		for i := 0; i < rc; i++ {
+			t.Fatal("No rows should ever be ready -- context cancel apparently did not happen")
+		}
 	}
 
 	if rows.Err() != context.Canceled {
