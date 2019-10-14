@@ -71,14 +71,21 @@ func main() {
 func listTasks() error {
 	rows, _ := conn.Query("select * from tasks")
 
-	for rows.Next() {
-		var id int32
-		var description string
-		err := rows.Scan(&id, &description)
-		if err != nil {
-			return err
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
 		}
-		fmt.Printf("%d. %s\n", id, description)
+
+		for i := 0; i < rc; i++ {
+			var id int32
+			var description string
+			err := rows.Scan(&id, &description)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("%d. %s\n", id, description)
+		}
 	}
 
 	return rows.Err()

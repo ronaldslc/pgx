@@ -344,7 +344,7 @@ func (c *Conn) queryPreparedContext(ctx context.Context, name string, argsV []dr
 
 	args := namedValueToInterface(argsV)
 
-	rows, err := c.conn.QueryEx(ctx, name, nil, args...)
+	rows, err := c.conn.QueryEx(ctx, 1, name, nil, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -402,8 +402,9 @@ func (s *Stmt) QueryContext(ctx context.Context, argsV []driver.NamedValue) (dri
 }
 
 type Rows struct {
-	rows   *pgx.Rows
-	values []interface{}
+	rows            *pgx.Rows
+	values          []interface{}
+	pendingRowCount int
 }
 
 func (r *Rows) Columns() []string {
@@ -461,8 +462,11 @@ func (r *Rows) Next(dest []driver.Value) error {
 		}
 	}
 
-	more := r.rows.Next()
-	if !more {
+	if r.pendingRowCount <= 0 {
+		r.pendingRowCount = r.rows.Next()
+	}
+
+	if r.pendingRowCount <= 0 {
 		if r.rows.Err() == nil {
 			return io.EOF
 		} else {
@@ -481,6 +485,7 @@ func (r *Rows) Next(dest []driver.Value) error {
 			return err
 		}
 	}
+	r.pendingRowCount--
 
 	return nil
 }

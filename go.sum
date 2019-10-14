@@ -10,6 +10,10 @@ github.com/mattn/go-colorable v0.1.2 h1:/bC9yWikZXAL9uJdulbSfyVNIR3n3trXl+v8+1sx
 github.com/mattn/go-colorable v0.1.2/go.mod h1:U0ppj6V5qS13XJ6of8GYAs25YV2eR4EVcfRqFIhoBtE=
 github.com/mattn/go-isatty v0.0.8 h1:HLtExJ+uU2HOZ+wI0Tt5DtUDrx8yhUqDcp7fYERX4CE=
 github.com/mattn/go-isatty v0.0.8/go.mod h1:Iq45c/XA43vh69/j3iqttzPXn0bhXyGjM0Hdxcsrc5s=
+github.com/mysilkway/rbuf v0.0.0-20191014115437-1d981052fd51 h1:s6buNzHs2+U1dDSAa1fQNYBxxvlkgxaMY/oAfzO6dPI=
+github.com/mysilkway/rbuf v0.0.0-20191014115437-1d981052fd51/go.mod h1:9A150yOpk9H4jFNEzGCXFSRDMDjnIwjFqfvdFdIyNZI=
+github.com/mysilkway/rbuf v0.0.0-20191014140848-1335bd9d0700 h1:/rSV2nUUVdTo/METWacpUf8GVF++f9/O/f5ulnxCJrg=
+github.com/mysilkway/rbuf v0.0.0-20191014140848-1335bd9d0700/go.mod h1:9A150yOpk9H4jFNEzGCXFSRDMDjnIwjFqfvdFdIyNZI=
 github.com/pkg/errors v0.8.1 h1:iURUrRGxPUNPdy5/HRSm+Yj6okJ6UtLINN0Q9M4+h3I=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=

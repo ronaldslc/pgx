@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/pkg/errors"
@@ -26,7 +27,7 @@ func (r *Row) Scan(dest ...interface{}) (err error) {
 		return rows.Err()
 	}
 
-	if !rows.Next() {
+	if rows.Next() < 1 {
 		if rows.Err() == nil {
 			return ErrNoRows
 		}
@@ -45,7 +46,7 @@ type Rows struct {
 	conn       *Conn
 	connPool   *ConnPool
 	batch      *Batch
-	values     [][]byte
+	values     [][][]byte
 	fields     []FieldDescription
 	rowCount   int
 	columnIdx  int
@@ -55,6 +56,12 @@ type Rows struct {
 	args       []interface{}
 	unlockConn bool
 	closed     bool
+
+	maxRowCounts int
+	msgs         []pgproto3.BackendMessage
+	msgBodies    [][]byte
+	msgCount     int
+	scanIdx      int
 }
 
 func (rows *Rows) FieldDescriptions() []FieldDescription {
@@ -121,22 +128,30 @@ func (rows *Rows) fatal(err error) {
 // Next prepares the next row for reading. It returns true if there is another
 // row and false if no more rows are available. It automatically closes rows
 // when all rows are read.
-func (rows *Rows) Next() bool {
+func (rows *Rows) Next() int {
 	if rows.closed {
-		return false
+		return 0
 	}
 
-	rows.rowCount++
 	rows.columnIdx = 0
+	rows.scanIdx = 0
 
-	for {
-		msg, err := rows.conn.rxMsg()
-		if err != nil {
+	rowCount := 0
+	rows.values = make([][][]byte, len(rows.msgs))
+	msgCount := rows.msgCount
+
+	for idx := 0; idx < msgCount; idx++ {
+		rows.msgCount--
+		if err := rows.msgs[idx].Decode(rows.msgBodies[idx]); err != nil {
+			if rows.msgCount > 0 {
+				copy(rows.msgs, rows.msgs[msgCount-rows.msgCount:])
+				copy(rows.msgBodies, rows.msgBodies[msgCount-rows.msgCount:])
+			}
 			rows.fatal(err)
-			return false
+			return 0
 		}
 
-		switch msg := msg.(type) {
+		switch msg := rows.msgs[idx].(type) {
 		case *pgproto3.RowDescription:
 			rows.fields = rows.conn.rxRowDescription(msg)
 			for i := range rows.fields {
@@ -144,30 +159,67 @@ func (rows *Rows) Next() bool {
 					rows.fields[i].DataTypeName = dt.Name
 					rows.fields[i].FormatCode = TextFormatCode
 				} else {
+					if rows.msgCount > 0 {
+						copy(rows.msgs, rows.msgs[msgCount-rows.msgCount:])
+						copy(rows.msgBodies, rows.msgBodies[msgCount-rows.msgCount:])
+					}
 					rows.fatal(errors.Errorf("unknown oid: %d", rows.fields[i].DataType))
-					return false
+					return 0
 				}
 			}
 		case *pgproto3.DataRow:
 			if len(msg.Values) != len(rows.fields) {
+				if rows.msgCount > 0 {
+					copy(rows.msgs, rows.msgs[msgCount-rows.msgCount:])
+					copy(rows.msgBodies, rows.msgBodies[msgCount-rows.msgCount:])
+				}
 				rows.fatal(ProtocolError(fmt.Sprintf("Row description field count (%v) and data row field count (%v) do not match", len(rows.fields), len(msg.Values))))
-				return false
+				return 0
 			}
 
-			rows.values = msg.Values
-			return true
+			rows.values[rowCount] = make([][]byte, len(msg.Values))
+			for i := range msg.Values {
+				if msg.Values[i] != nil {
+					rows.values[rowCount][i] = make([]byte, len(msg.Values[i]))
+					copy(rows.values[rowCount][i], msg.Values[i])
+				}
+			}
+			rows.rowCount++
+			rowCount++
 		case *pgproto3.CommandComplete:
+			if rowCount > 0 {
+				copy(rows.msgs, rows.msgs[idx:])
+				copy(rows.msgBodies, rows.msgBodies[idx:])
+				rows.msgCount++
+				return rowCount
+			}
+			rows.rowCount++
 			rows.Close()
-			return false
-
+			return 0
 		default:
-			err = rows.conn.processContextFreeMsg(msg)
+			err := rows.conn.processContextFreeMsg(msg)
 			if err != nil {
+				if rows.msgCount > 0 {
+					copy(rows.msgs, rows.msgs[msgCount-rows.msgCount:])
+					copy(rows.msgBodies, rows.msgBodies[msgCount-rows.msgCount:])
+				}
 				rows.fatal(err)
-				return false
+				return 0
 			}
 		}
 	}
+
+	if err := rows.batchRead(); err != nil {
+		rows.fatal(err)
+		return 0
+	}
+
+	if rowCount == 0 {
+		return rows.Next()
+	}
+
+	rows.values = rows.values[:rowCount]
+	return rowCount
 }
 
 func (rows *Rows) nextColumn() ([]byte, *FieldDescription, bool) {
@@ -179,10 +231,23 @@ func (rows *Rows) nextColumn() ([]byte, *FieldDescription, bool) {
 		return nil, nil, false
 	}
 
-	buf := rows.values[rows.columnIdx]
+	buf := rows.values[rows.scanIdx][rows.columnIdx]
 	fd := &rows.fields[rows.columnIdx]
 	rows.columnIdx++
 	return buf, fd, true
+}
+
+func (rows *Rows) batchRead() (err error) {
+	if rows.closed {
+		return nil
+	}
+	rows.msgCount, err = rows.conn.frontend.Receive(rows.maxRowCounts, rows.msgs, rows.msgBodies)
+	if err != nil {
+		if netErr, ok := err.(net.Error); !(ok && netErr.Timeout()) {
+			rows.conn.die(err)
+		}
+	}
+	return
 }
 
 type scanArgError struct {
@@ -204,6 +269,8 @@ func (rows *Rows) Scan(dest ...interface{}) (err error) {
 		rows.fatal(err)
 		return err
 	}
+
+	rows.columnIdx = 0
 
 	for i, d := range dest {
 		buf, fd, _ := rows.nextColumn()
@@ -271,6 +338,7 @@ func (rows *Rows) Scan(dest ...interface{}) (err error) {
 			return rows.Err()
 		}
 	}
+	rows.scanIdx++
 
 	return nil
 }
@@ -282,6 +350,7 @@ func (rows *Rows) Values() ([]interface{}, error) {
 	}
 
 	values := make([]interface{}, 0, len(rows.fields))
+	rows.columnIdx = 0
 
 	for range rows.fields {
 		buf, fd, _ := rows.nextColumn()
@@ -326,6 +395,7 @@ func (rows *Rows) Values() ([]interface{}, error) {
 			return nil, rows.Err()
 		}
 	}
+	rows.scanIdx++
 
 	return values, rows.Err()
 }
@@ -334,10 +404,14 @@ func (rows *Rows) Values() ([]interface{}, error) {
 // be returned in an error state. So it is allowed to ignore the error returned
 // from Query and handle it in *Rows.
 func (c *Conn) Query(sql string, args ...interface{}) (*Rows, error) {
-	return c.QueryEx(context.Background(), sql, nil, args...)
+	return c.QueryEx(context.Background(), 0, sql, nil, args...)
 }
 
-func (c *Conn) getRows(sql string, args []interface{}) *Rows {
+func (c *Conn) QueryWithRowCount(maxRowCounts int, sql string, args ...interface{}) (*Rows, error) {
+	return c.QueryEx(context.Background(), maxRowCounts, sql, nil, args...)
+}
+
+func (c *Conn) getRows(maxRowCount int, sql string, args []interface{}) *Rows {
 	if len(c.preallocatedRows) == 0 {
 		c.preallocatedRows = make([]Rows, 64)
 	}
@@ -349,6 +423,14 @@ func (c *Conn) getRows(sql string, args []interface{}) *Rows {
 	r.startTime = c.lastActivityTime
 	r.sql = sql
 	r.args = args
+
+	if maxRowCount <= 0 {
+		// default maximum receive row count to 16
+		maxRowCount = 16
+	}
+	r.maxRowCounts = maxRowCount
+	r.msgs = make([]pgproto3.BackendMessage, maxRowCount+3)
+	r.msgBodies = make([][]byte, maxRowCount+3)
 
 	return r
 }
@@ -371,7 +453,16 @@ type QueryExOptions struct {
 	SimpleProtocol bool
 }
 
-func (c *Conn) QueryEx(ctx context.Context, sql string, options *QueryExOptions, args ...interface{}) (rows *Rows, err error) {
+func (c *Conn) QueryEx(ctx context.Context, maxRowCount int, sql string, options *QueryExOptions, args ...interface{}) (rows *Rows, err error) {
+	defer func() {
+		if rows != nil && err == nil {
+			if nerr := rows.batchRead(); nerr != nil {
+				rows.fatal(nerr)
+				return
+			}
+		}
+	}()
+
 	err = c.waitForPreviousCancelQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -383,7 +474,7 @@ func (c *Conn) QueryEx(ctx context.Context, sql string, options *QueryExOptions,
 
 	c.lastActivityTime = time.Now()
 
-	rows = c.getRows(sql, args)
+	rows = c.getRows(maxRowCount, sql, args)
 
 	if err := c.lock(); err != nil {
 		rows.fatal(err)
@@ -552,6 +643,6 @@ func (c *Conn) sanitizeAndSendSimpleQuery(sql string, args ...interface{}) (err 
 }
 
 func (c *Conn) QueryRowEx(ctx context.Context, sql string, options *QueryExOptions, args ...interface{}) *Row {
-	rows, _ := c.QueryEx(ctx, sql, options, args...)
+	rows, _ := c.QueryEx(ctx, 1, sql, options, args...)
 	return (*Row)(rows)
 }

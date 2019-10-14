@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/pkg/errors"
@@ -41,6 +42,7 @@ type IConn interface {
 	Exec(sql string, arguments ...interface{}) (commandTag CommandTag, err error)
 	Query(sql string, args ...interface{}) (*Rows, error)
 	QueryRow(sql string, args ...interface{}) *Row
+	QueryWithRowCount(maxRowCounts int, sql string, args ...interface{}) (*Rows, error)
 	Prepare(name, sql string) (ps *PreparedStatement, err error)
 }
 
@@ -130,7 +132,7 @@ type Conn struct {
 	status       byte // One of connStatus* constants
 	causeOfDeath error
 
-	pendingReadyForQueryCount int // numer of ReadyForQuery messages expected
+	pendingReadyForQueryCount int // number of ReadyForQuery messages expected
 	cancelQueryInProgress     int32
 	cancelQueryCompleted      chan struct{}
 
@@ -331,7 +333,14 @@ func (c *Conn) connect(config ConnConfig, network, address string, tlsConfig *tl
 		}
 	}
 
-	c.frontend, err = pgproto3.NewFrontend(c.conn, c.conn)
+	var rawConn syscall.RawConn
+	if sc, ok := c.conn.(syscall.Conn); ok {
+		if rawConn, err = sc.SyscallConn(); err != nil {
+			return err
+		}
+	}
+
+	c.frontend, err = pgproto3.NewFrontend(c.conn, c.conn, rawConn)
 	if err != nil {
 		return err
 	}
@@ -420,20 +429,25 @@ where (
 		return err
 	}
 
-	for rows.Next() {
-		var oid pgtype.OID
-		var name pgtype.Text
-		if err := rows.Scan(&oid, &name); err != nil {
-			return err
+	for {
+		rowCounts := rows.Next()
+		if rowCounts <= 0 {
+			break
 		}
 
-		nameOIDs[name.String] = oid
-	}
+		for i := 0; i < rowCounts; i++ {
+			var oid pgtype.OID
+			var name pgtype.Text
+			if err := rows.Scan(&oid, &name); err != nil {
+				return err
+			}
+			nameOIDs[name.String] = oid
+		}
 
-	if rows.Err() != nil {
-		return rows.Err()
+		if rows.Err() != nil {
+			return rows.Err()
+		}
 	}
-
 	c.ConnInfo = pgtype.NewConnInfo()
 	c.ConnInfo.InitializeDataTypes(nameOIDs)
 	return nil
@@ -1158,7 +1172,14 @@ func (c *Conn) rxMsg() (pgproto3.BackendMessage, error) {
 		return nil, ErrDeadConn
 	}
 
-	msg, err := c.frontend.Receive()
+	msgs := make([]pgproto3.BackendMessage, 1)
+	msgBodies := make([][]byte, 1)
+
+	_, err := c.frontend.Receive(1, msgs, msgBodies)
+	if err == nil {
+		err = msgs[0].Decode(msgBodies[0])
+	}
+
 	if err != nil {
 		if netErr, ok := err.(net.Error); !(ok && netErr.Timeout()) {
 			c.die(err)
@@ -1170,7 +1191,7 @@ func (c *Conn) rxMsg() (pgproto3.BackendMessage, error) {
 
 	// fmt.Printf("rxMsg: %#v\n", msg)
 
-	return msg, nil
+	return msgs[0], nil
 }
 
 func (c *Conn) rxAuthenticationX(msg *pgproto3.Authentication) (err error) {
