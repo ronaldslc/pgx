@@ -44,19 +44,12 @@ func TestConnCopyFromSmall(t *testing.T) {
 	}
 
 	var outputRows [][]interface{}
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
+	for rows.Next() {
+		row, err := rows.Values()
+		if err != nil {
+			t.Errorf("Unexpected error for rows.Values(): %v", err)
 		}
-
-		for i := 0; i< rc; i++ {
-			row, err := rows.Values()
-			if err != nil {
-				t.Errorf("Unexpected error for rows.Values(): %v", err)
-			}
-			outputRows = append(outputRows, row)
-		}
+		outputRows = append(outputRows, row)
 	}
 
 	if rows.Err() != nil {
@@ -107,19 +100,12 @@ func TestConnCopyFromLarge(t *testing.T) {
 	}
 
 	var outputRows [][]interface{}
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
+	for rows.Next() {
+		row, err := rows.Values()
+		if err != nil {
+			t.Errorf("Unexpected error for rows.Values(): %v", err)
 		}
-
-		for i := 0; i < rc; i++ {
-			row, err := rows.Values()
-			if err != nil {
-				t.Errorf("Unexpected error for rows.Values(): %v", err)
-			}
-			outputRows = append(outputRows, row)
-		}
+		outputRows = append(outputRows, row)
 	}
 
 	if rows.Err() != nil {
@@ -169,19 +155,12 @@ func TestConnCopyFromJSON(t *testing.T) {
 	}
 
 	var outputRows [][]interface{}
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
+	for rows.Next() {
+		row, err := rows.Values()
+		if err != nil {
+			t.Errorf("Unexpected error for rows.Values(): %v", err)
 		}
-
-		for i := 0; i < rc; i++ {
-			row, err := rows.Values()
-			if err != nil {
-				t.Errorf("Unexpected error for rows.Values(): %v", err)
-			}
-			outputRows = append(outputRows, row)
-		}
+		outputRows = append(outputRows, row)
 	}
 
 	if rows.Err() != nil {
@@ -251,19 +230,12 @@ func TestConnCopyFromFailServerSideMidway(t *testing.T) {
 	}
 
 	var outputRows [][]interface{}
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
+	for rows.Next() {
+		row, err := rows.Values()
+		if err != nil {
+			t.Errorf("Unexpected error for rows.Values(): %v", err)
 		}
-
-		for i := 0; i < rc; i++ {
-			row, err := rows.Values()
-			if err != nil {
-				t.Errorf("Unexpected error for rows.Values(): %v", err)
-			}
-			outputRows = append(outputRows, row)
-		}
+		outputRows = append(outputRows, row)
 	}
 
 	if rows.Err() != nil {
@@ -333,19 +305,12 @@ func TestConnCopyFromFailServerSideMidwayAbortsWithoutWaiting(t *testing.T) {
 	}
 
 	var outputRows [][]interface{}
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
+	for rows.Next() {
+		row, err := rows.Values()
+		if err != nil {
+			t.Errorf("Unexpected error for rows.Values(): %v", err)
 		}
-
-		for i := 0; i < rc; i++ {
-			row, err := rows.Values()
-			if err != nil {
-				t.Errorf("Unexpected error for rows.Values(): %v", err)
-			}
-			outputRows = append(outputRows, row)
-		}
+		outputRows = append(outputRows, row)
 	}
 
 	if rows.Err() != nil {
@@ -383,19 +348,12 @@ func TestConnCopyFromCopyFromSourceErrorMidway(t *testing.T) {
 	}
 
 	var outputRows [][]interface{}
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
+	for rows.Next() {
+		row, err := rows.Values()
+		if err != nil {
+			t.Errorf("Unexpected error for rows.Values(): %v", err)
 		}
-
-		for i := 0; i < rc; i++ {
-			row, err := rows.Values()
-			if err != nil {
-				t.Errorf("Unexpected error for rows.Values(): %v", err)
-			}
-			outputRows = append(outputRows, row)
-		}
+		outputRows = append(outputRows, row)
 	}
 
 	if rows.Err() != nil {
@@ -450,19 +408,12 @@ func TestConnCopyFromCopyFromSourceErrorEnd(t *testing.T) {
 	}
 
 	var outputRows [][]interface{}
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
+	for rows.Next() {
+		row, err := rows.Values()
+		if err != nil {
+			t.Errorf("Unexpected error for rows.Values(): %v", err)
 		}
-
-		for i := 0; i < rc; i++ {
-			row, err := rows.Values()
-			if err != nil {
-				t.Errorf("Unexpected error for rows.Values(): %v", err)
-			}
-			outputRows = append(outputRows, row)
-		}
+		outputRows = append(outputRows, row)
 	}
 
 	if rows.Err() != nil {

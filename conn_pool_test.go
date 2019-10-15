@@ -496,22 +496,15 @@ func TestConnPoolResetClosesCheckedOutConnectionsOnRelease(t *testing.T) {
 	for _, rows := range inProgressRows {
 		var expectedN int32
 
-		for {
-			rc := rows.Next()
-			if rc <= 0 {
-				break
+		for rows.Next() {
+			expectedN++
+			var n int32
+			err := rows.Scan(&n)
+			if err != nil {
+				t.Fatal(err)
 			}
-
-			for i := 0; i < rc; i++ {
-				expectedN++
-				var n int32
-				err := rows.Scan(&n)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if expectedN != n {
-					t.Fatalf("Expected n to be %d, but it was %d", expectedN, n)
-				}
+			if expectedN != n {
+				t.Fatalf("Expected n to be %d, but it was %d", expectedN, n)
 			}
 		}
 
@@ -557,20 +550,14 @@ func TestConnPoolResetClosesCheckedInConnections(t *testing.T) {
 
 	// Check that the queries are completed
 	for _, rows := range inProgressRows {
-		for {
-			rc := rows.Next()
-			if rc <= 0 {
-				break
+		for rows.Next() {
+			var pid int32
+			err := rows.Scan(&pid)
+			if err != nil {
+				t.Fatal(err)
 			}
+			inProgressPIDs = append(inProgressPIDs, pid)
 
-			for i := 0; i < rc; i++ {
-				var pid int32
-				err := rows.Scan(&pid)
-				if err != nil {
-					t.Fatal(err)
-				}
-				inProgressPIDs = append(inProgressPIDs, pid)
-			}
 		}
 
 		if err := rows.Err(); err != nil {
@@ -731,18 +718,11 @@ func TestConnPoolQuery(t *testing.T) {
 		t.Fatalf("Unexpected connection pool stats: %v", stats)
 	}
 
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
-		}
-
-		for i := 0; i < rc; i++ {
-			var n int32
-			rows.Scan(&n)
-			sum += n
-			rowCount++
-		}
+	for rows.Next() {
+		var n int32
+		rows.Scan(&n)
+		sum += n
+		rowCount++
 	}
 
 	if rows.Err() != nil {
@@ -782,27 +762,20 @@ func TestConnPoolQueryConcurrentLoad(t *testing.T) {
 			}
 			defer rows.Close()
 
-			for {
-				rc := rows.Next()
-				if rc <= 0 {
-					break
+			for rows.Next() {
+				var n int32
+				err = rows.Scan(&n)
+				if err != nil {
+					t.Fatalf("rows.Scan failed: %v", err)
 				}
+				if n != rowCount+1 {
+					t.Fatalf("Expected n to be %d, but it was %d", rowCount+1, n)
+				}
+				rowCount++
+			}
 
-				for k := 0; k < rc; k++ {
-					var n int32
-					err = rows.Scan(&n)
-					if err != nil {
-						t.Fatalf("rows.Scan failed: %v", err)
-					}
-					if n != rowCount+1 {
-						t.Fatalf("Expected n to be %d, but it was %d", rowCount+1, n)
-					}
-					rowCount++
-				}
-
-				if rows.Err() != nil {
-					t.Fatalf("conn.Query failed: %v", rows.Err())
-				}
+			if rows.Err() != nil {
+				t.Fatalf("conn.Query failed: %v", rows.Err())
 			}
 
 			if rowCount != 1000 {
@@ -1038,25 +1011,18 @@ func TestConnPoolBeginBatch(t *testing.T) {
 		t.Error(err)
 	}
 
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
+	for i := 0; rows.Next(); i++ {
+		var n int
+		if err := rows.Scan(&n); err != nil {
+			t.Error(err)
 		}
+		if n != i {
+			t.Errorf("n => %v, want %v", n, i)
+		}
+	}
 
-		for i := 0; i < rc; i++ {
-			var n int
-			if err := rows.Scan(&n); err != nil {
-				t.Error(err)
-			}
-			if n != i {
-				t.Errorf("n => %v, want %v", n, i)
-			}
-		}
-
-		if rows.Err() != nil {
-			t.Error(rows.Err())
-		}
+	if rows.Err() != nil {
+		t.Error(rows.Err())
 	}
 
 	rows, err = batch.QueryResults()
@@ -1064,20 +1030,13 @@ func TestConnPoolBeginBatch(t *testing.T) {
 		t.Error(err)
 	}
 
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
+	for i := 0; rows.Next(); i++ {
+		var n int
+		if err := rows.Scan(&n); err != nil {
+			t.Error(err)
 		}
-
-		for i := 0; i < rc; i++ {
-			var n int
-			if err := rows.Scan(&n); err != nil {
-				t.Error(err)
-			}
-			if n != i {
-				t.Errorf("n => %v, want %v", n, i)
-			}
+		if n != i {
+			t.Errorf("n => %v, want %v", n, i)
 		}
 	}
 

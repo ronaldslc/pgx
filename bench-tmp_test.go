@@ -22,17 +22,10 @@ func BenchmarkPgtypeInt4ParseBinary(b *testing.B) {
 			b.Fatal(err)
 		}
 
-		for {
-			rc := rows.Next()
-			if rc <= 0 {
-				break
-			}
-
-			for i := 0; i < rc; i++ {
-				err := rows.Scan(&n)
-				if err != nil {
-					b.Fatal(err)
-				}
+		for rows.Next() {
+			err := rows.Scan(&n)
+			if err != nil {
+				b.Fatal(err)
 			}
 		}
 

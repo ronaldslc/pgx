@@ -147,18 +147,11 @@ func query(q queryer, actionNum int) error {
 	}
 	defer rows.Close()
 
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
-		}
-
-		for i := 0; i < rc; i++ {
-			var id int32
-			var name, description string
-			var creationTime time.Time
-			rows.Scan(&id, &name, &description, &creationTime)
-		}
+	for rows.Next() {
+		var id int32
+		var name, description string
+		var creationTime time.Time
+		rows.Scan(&id, &name, &description, &creationTime)
 	}
 
 	return rows.Err()
@@ -173,17 +166,9 @@ func queryCloseEarly(q queryer, actionNum int) error {
 	}
 	defer rows.Close()
 
-	i := 0
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
-		}
-		for k := 0; k < rc && i < 10; k++ {
-			var n int32
-			rows.Scan(&n)
-			i++
-		}
+	for i := 0; i < 10 && rows.Next(); i++ {
+		var n int32
+		rows.Scan(&n)
 	}
 	rows.Close()
 
@@ -200,16 +185,9 @@ func queryErrorWhileReturningRows(q queryer, actionNum int) error {
 	}
 	defer rows.Close()
 
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
-		}
-
-		for i := 0; i < rc; i++ {
-			var n int32
-			rows.Scan(&n)
-		}
+	for rows.Next() {
+		var n int32
+		rows.Scan(&n)
 	}
 
 	if _, ok := rows.Err().(pgx.PgError); ok {
@@ -354,15 +332,8 @@ func canceledQueryExContext(pool *pgx.ConnPool, actionNum int) error {
 		return errors.Errorf("Only allowed error is context.Canceled, got %v", err)
 	}
 
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
-		}
-
-		for i := 0; i < rc; i++ {
-			return errors.New("should never receive row")
-		}
+	for rows.Next() {
+		return errors.New("should never receive row")
 	}
 
 	if rows.Err() != context.Canceled {

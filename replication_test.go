@@ -22,15 +22,8 @@ func getConfirmedFlushLsnFor(t *testing.T, conn *pgx.Conn, slot string) string {
 	defer rows.Close()
 
 	var restartLsn string
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
-		}
-
-		for i := 0; i < rc; i++ {
-			rows.Scan(&restartLsn)
-		}
+	for rows.Next() {
+		rows.Scan(&restartLsn)
 	}
 	return restartLsn
 }
@@ -225,23 +218,16 @@ func TestIdentifySystem(t *testing.T) {
 	}
 
 	var rowCount int
-	for {
-		rowCounts := r.Next()
-		if rowCounts <= 0 {
-			break
+	for r.Next() {
+		rowCount++
+		values, err := r.Values()
+		if err != nil {
+			t.Error(err)
 		}
-
-		for rowIdx := 0; rowIdx < rowCounts; rowIdx++ {
-			rowCount++
-			values, err := r.Values()
-			if err != nil {
-				t.Error(err)
-			}
-			t.Logf("Row values: %v", values)
-		}
-		if r.Err() != nil {
-			t.Error(r.Err())
-		}
+		t.Logf("Row values: %v", values)
+	}
+	if r.Err() != nil {
+		t.Error(r.Err())
 	}
 
 	if rowCount == 0 {
@@ -255,19 +241,12 @@ func getCurrentTimeline(t *testing.T, rc *pgx.ReplicationConn) int {
 		t.Error(err)
 	}
 	defer r.Close()
-	for {
-		rowCounts := r.Next()
-		if rowCounts <= 0 {
-			break
+	for r.Next() {
+		values, e := r.Values()
+		if e != nil {
+			t.Error(e)
 		}
-
-		for rowIdx := 0; rowIdx < rowCounts; rowIdx++ {
-			values, e := r.Values()
-			if e != nil {
-				t.Error(e)
-			}
-			return int(values[1].(int32))
-		}
+		return int(values[1].(int32))
 	}
 	t.Fatal("Failed to read timeline")
 	return -1
@@ -294,20 +273,13 @@ func TestGetTimelineHistory(t *testing.T) {
 	}
 
 	var rowCount int
-	for {
-		rowCounts := r.Next()
-		if rowCounts <= 0 {
-			break
+	for r.Next() {
+		rowCount++
+		values, err := r.Values()
+		if err != nil {
+			t.Error(err)
 		}
-
-		for rowIdx := 0; rowIdx < rowCounts; rowIdx++ {
-			rowCount++
-			values, err := r.Values()
-			if err != nil {
-				t.Error(err)
-			}
-			t.Logf("Row values: %v", values)
-		}
+		t.Logf("Row values: %v", values)
 	}
 	if r.Err() != nil {
 		if strings.Contains(r.Err().Error(), "No such file or directory") {
