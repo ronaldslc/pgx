@@ -41,7 +41,7 @@ func (r *Row) Scan(dest ...interface{}) (err error) {
 
 // Rows is the result set returned from *Conn.Query. Rows must be closed before
 // the *Conn can be used again. Rows are closed by explicitly calling Close(),
-// calling Next() until it returns false, or when a fatal error occurs.
+// calling Next() until it returns 0, or when a fatal error occurs.
 type Rows struct {
 	conn       *Conn
 	connPool   *ConnPool
@@ -57,11 +57,11 @@ type Rows struct {
 	unlockConn bool
 	closed     bool
 
-	maxRowCounts int
-	msgs         []pgproto3.BackendMessage
-	msgBodies    [][]byte
-	msgCount     int
-	scanIdx      int
+	maxRowCounts int                       // the count of maximum row return when calling Next
+	msgs         []pgproto3.BackendMessage // the cached message in batchRead
+	msgBodies    [][]byte                  // the cached message body in batchRead
+	msgCount     int                       // the non processed message count, used to get cached message and body
+	scanIdx      int                       // the index used in Scan to get values
 }
 
 func (rows *Rows) FieldDescriptions() []FieldDescription {
@@ -125,8 +125,8 @@ func (rows *Rows) fatal(err error) {
 	rows.Close()
 }
 
-// Next prepares the next row for reading. It returns true if there is another
-// row and false if no more rows are available. It automatically closes rows
+// Next prepares the next row for reading. It returns row count (int) which more then 0 if there is another
+// row and 0 if no more rows are available. It automatically closes rows
 // when all rows are read.
 func (rows *Rows) Next() int {
 	if rows.closed {
@@ -237,6 +237,7 @@ func (rows *Rows) nextColumn() ([]byte, *FieldDescription, bool) {
 	return buf, fd, true
 }
 
+// function to batch get message and message body and stored to Rows
 func (rows *Rows) batchRead() (err error) {
 	if rows.closed {
 		return nil
