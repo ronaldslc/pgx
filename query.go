@@ -434,8 +434,8 @@ func (c *Conn) getRows(maxRowCount int, sql string, args []interface{}) *Rows {
 	r.args = args
 
 	if maxRowCount <= 0 {
-		// default maximum receive row count to 16
-		maxRowCount = 16
+		// default maximum receive row count to 100
+		maxRowCount = 100
 	}
 	r.maxRowCounts = maxRowCount
 	r.values = make([][][]byte, maxRowCount)
