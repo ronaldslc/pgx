@@ -25,13 +25,19 @@ pgx implements Query and Scan in the familiar database/sql style.
     defer rows.Close()
 
     // Iterate through the result set
-    for rowCount := rows.Next(); rowCount > 0; rowCount -- {
-        var n int32
-        err = rows.Scan(&n)
-        if err != nil {
-            return err
-        }
-        sum += n
+	for {
+		rc := rows.Next()
+		if rc <= 0 {
+			break
+		}
+		for i := 0; i < rc; i++ {
+        	var n int32
+        	err = rows.Scan(&n)
+        	if err != nil {
+            	return err
+        	}
+        	sum += n
+		}
     }
 
     // Any errors encountered by rows.Next or rows.Scan will be returned here
