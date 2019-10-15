@@ -10,7 +10,7 @@ import (
 )
 
 type Frontend struct {
-	rawConn syscall.RawConn
+	rawConn syscall.RawConn // used RawConn to make Read function to be non-blocking
 	rb      *rbuf.FixedSizeRingBuf
 	w       io.Writer
 
@@ -53,8 +53,9 @@ func (b *Frontend) Send(msg FrontendMessage) error {
 }
 
 // function to batch receive backend message
-// given array must be already allocated
-// returning array of non-decoded BackendMessage, and array of message body ([][]byte)
+// given array(msgs, msgBodies) must be already allocated
+// non-decoded BackendMessage will be assigned to msgs, and message body ([][]byte) will be assigned to msgBodies
+// n is the maximum row count to get data row
 func (b *Frontend) Receive(n int, msgs []BackendMessage, msgBodies [][]byte) (int, error) {
 	if n < 0 || n > len(msgs) || n > len(msgBodies) {
 		return 0, errors.Errorf("invalid array length, n: [%d], msg: [%d], msgBodies: [%d]", n, len(msgs), len(msgBodies))

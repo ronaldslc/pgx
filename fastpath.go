@@ -26,19 +26,13 @@ func (f *fastpath) addFunction(name string, oid pgtype.OID) {
 }
 
 func (f *fastpath) addFunctions(rows *Rows) error {
-	for {
-		rc := rows.Next()
-		if rc <= 0 {
-			break
+	for rows.Next() {
+		var name string
+		var oid pgtype.OID
+		if err := rows.Scan(&name, &oid); err != nil {
+			return err
 		}
-		for i := 0; i < rc; i++ {
-			var name string
-			var oid pgtype.OID
-			if err := rows.Scan(&name, &oid); err != nil {
-				return err
-			}
-			f.addFunction(name, oid)
-		}
+		f.addFunction(name, oid)
 	}
 	return rows.Err()
 }

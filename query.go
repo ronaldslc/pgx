@@ -27,7 +27,7 @@ func (r *Row) Scan(dest ...interface{}) (err error) {
 		return rows.Err()
 	}
 
-	if rows.Next() < 1 {
+	if !rows.Next() {
 		if rows.Err() == nil {
 			return ErrNoRows
 		}
@@ -57,11 +57,16 @@ type Rows struct {
 	unlockConn bool
 	closed     bool
 
-	maxRowCounts int                       // the count of maximum row return when calling Next
-	msgs         []pgproto3.BackendMessage // the cached message in batchRead
-	msgBodies    [][]byte                  // the cached message body in batchRead
-	msgCount     int                       // the non processed message count, used to get cached message and body
-	scanIdx      int                       // the index used in Scan to get values
+	maxRowCounts    int                       // the count of maximum row return when calling Next
+	msgs            []pgproto3.BackendMessage // the cached non-decoded message in batchRead, will be pre-allocated when structure made in getRows
+	msgBodies       [][]byte                  // the cached message body in batchRead, will be pre-allocated when structure made in getRows
+	pendingMsgCount int                       // the non processed message count, used to get cached message and body
+
+	// the count of row which need to be read in Scan
+	// if it is large then rowIdx, rows.Next will not get the row data from Reader
+	// and return the pendingRowCount - rowIdx
+	pendingRowCount int
+	rowIdx          int // the index of not yet scanned row
 }
 
 func (rows *Rows) FieldDescriptions() []FieldDescription {
@@ -125,28 +130,40 @@ func (rows *Rows) fatal(err error) {
 	rows.Close()
 }
 
-// Next prepares the next row for reading. It returns row count (int) which more then 0 if there is another
+// Next prepares the next rows for reading. It returns true if there is another
+// row and false if no more rows are available. It automatically closes rows
+// when all rows are read.
+func (rows *Rows) Next() bool {
+	return rows.BatchNext() > 0
+}
+
+// BatchNext prepares the next rows for reading. It returns row count (int) which more then 0 if there is another
 // row and 0 if no more rows are available. It automatically closes rows
 // when all rows are read.
-func (rows *Rows) Next() int {
+func (rows *Rows) BatchNext() int {
 	if rows.closed {
 		return 0
 	}
 
+	// if there are rows which are no yet read, return the count
+	if rows.pendingRowCount > rows.rowIdx {
+		return rows.pendingRowCount - rows.rowIdx
+	}
+
+	// reset index and count
 	rows.columnIdx = 0
-	rows.scanIdx = 0
+	rows.rowIdx = 0
+	rows.pendingRowCount = 0
 
-	rowCount := 0
-	rows.values = make([][][]byte, len(rows.msgs))
-	msgCount := rows.msgCount
+	for idx := 0; idx < rows.pendingMsgCount; idx++ {
+		if _, ok := rows.msgs[idx].(*pgproto3.CommandComplete); ok && rows.pendingRowCount > 0 {
+			copy(rows.msgs, rows.msgs[idx:])
+			copy(rows.msgBodies, rows.msgBodies[idx:])
+			rows.pendingMsgCount = len(rows.msgs) - idx + 1
+			return rows.pendingRowCount
+		}
 
-	for idx := 0; idx < msgCount; idx++ {
-		rows.msgCount--
 		if err := rows.msgs[idx].Decode(rows.msgBodies[idx]); err != nil {
-			if rows.msgCount > 0 {
-				copy(rows.msgs, rows.msgs[msgCount-rows.msgCount:])
-				copy(rows.msgBodies, rows.msgBodies[msgCount-rows.msgCount:])
-			}
 			rows.fatal(err)
 			return 0
 		}
@@ -159,54 +176,40 @@ func (rows *Rows) Next() int {
 					rows.fields[i].DataTypeName = dt.Name
 					rows.fields[i].FormatCode = TextFormatCode
 				} else {
-					if rows.msgCount > 0 {
-						copy(rows.msgs, rows.msgs[msgCount-rows.msgCount:])
-						copy(rows.msgBodies, rows.msgBodies[msgCount-rows.msgCount:])
-					}
 					rows.fatal(errors.Errorf("unknown oid: %d", rows.fields[i].DataType))
 					return 0
 				}
 			}
 		case *pgproto3.DataRow:
 			if len(msg.Values) != len(rows.fields) {
-				if rows.msgCount > 0 {
-					copy(rows.msgs, rows.msgs[msgCount-rows.msgCount:])
-					copy(rows.msgBodies, rows.msgBodies[msgCount-rows.msgCount:])
-				}
 				rows.fatal(ProtocolError(fmt.Sprintf("Row description field count (%v) and data row field count (%v) do not match", len(rows.fields), len(msg.Values))))
 				return 0
 			}
 
-			rows.values[rowCount] = make([][]byte, len(msg.Values))
+			rows.values[rows.pendingRowCount] = make([][]byte, len(msg.Values))
 			for i := range msg.Values {
 				if msg.Values[i] != nil {
-					rows.values[rowCount][i] = make([]byte, len(msg.Values[i]))
-					copy(rows.values[rowCount][i], msg.Values[i])
+					rows.values[rows.pendingRowCount][i] = make([]byte, len(msg.Values[i]))
+					copy(rows.values[rows.pendingRowCount][i], msg.Values[i])
 				}
 			}
 			rows.rowCount++
-			rowCount++
+			rows.pendingRowCount++
 		case *pgproto3.CommandComplete:
-			if rowCount > 0 {
-				copy(rows.msgs, rows.msgs[idx:])
-				copy(rows.msgBodies, rows.msgBodies[idx:])
-				rows.msgCount++
-				return rowCount
-			}
 			rows.rowCount++
 			rows.Close()
 			return 0
 		default:
 			err := rows.conn.processContextFreeMsg(msg)
 			if err != nil {
-				if rows.msgCount > 0 {
-					copy(rows.msgs, rows.msgs[msgCount-rows.msgCount:])
-					copy(rows.msgBodies, rows.msgBodies[msgCount-rows.msgCount:])
-				}
 				rows.fatal(err)
 				return 0
 			}
 		}
+
+		// clean processed message and message body
+		rows.msgs[idx] = nil
+		rows.msgBodies[idx] = nil
 	}
 
 	if err := rows.batchRead(); err != nil {
@@ -214,12 +217,10 @@ func (rows *Rows) Next() int {
 		return 0
 	}
 
-	if rowCount == 0 {
-		return rows.Next()
+	if rows.pendingRowCount == 0 {
+		return rows.BatchNext()
 	}
-
-	rows.values = rows.values[:rowCount]
-	return rowCount
+	return rows.pendingRowCount
 }
 
 func (rows *Rows) nextColumn() ([]byte, *FieldDescription, bool) {
@@ -231,7 +232,7 @@ func (rows *Rows) nextColumn() ([]byte, *FieldDescription, bool) {
 		return nil, nil, false
 	}
 
-	buf := rows.values[rows.scanIdx][rows.columnIdx]
+	buf := rows.values[rows.rowIdx][rows.columnIdx]
 	fd := &rows.fields[rows.columnIdx]
 	rows.columnIdx++
 	return buf, fd, true
@@ -242,7 +243,7 @@ func (rows *Rows) batchRead() (err error) {
 	if rows.closed {
 		return nil
 	}
-	rows.msgCount, err = rows.conn.frontend.Receive(rows.maxRowCounts, rows.msgs, rows.msgBodies)
+	rows.pendingMsgCount, err = rows.conn.frontend.Receive(rows.maxRowCounts, rows.msgs, rows.msgBodies)
 	if err != nil {
 		if netErr, ok := err.(net.Error); !(ok && netErr.Timeout()) {
 			rows.conn.die(err)
@@ -264,9 +265,16 @@ func (e scanArgError) Error() string {
 // dest can include pointers to core types, values implementing the Scanner
 // interface, []byte, and nil. []byte will skip the decoding process and directly
 // copy the raw bytes received from PostgreSQL. nil will skip the value entirely.
+// NOTE: Scan can only be called once to get a row data, the next Scan will get the next row data if exist
 func (rows *Rows) Scan(dest ...interface{}) (err error) {
 	if len(rows.fields) != len(dest) {
 		err = errors.Errorf("Scan received wrong number of arguments, got %d but expected %d", len(dest), len(rows.fields))
+		rows.fatal(err)
+		return err
+	}
+
+	if rows.rowIdx >= rows.pendingRowCount {
+		err = errors.New("no row data")
 		rows.fatal(err)
 		return err
 	}
@@ -339,7 +347,7 @@ func (rows *Rows) Scan(dest ...interface{}) (err error) {
 			return rows.Err()
 		}
 	}
-	rows.scanIdx++
+	rows.rowIdx++
 
 	return nil
 }
@@ -396,7 +404,7 @@ func (rows *Rows) Values() ([]interface{}, error) {
 			return nil, rows.Err()
 		}
 	}
-	rows.scanIdx++
+	rows.rowIdx++
 
 	return values, rows.Err()
 }
@@ -430,6 +438,7 @@ func (c *Conn) getRows(maxRowCount int, sql string, args []interface{}) *Rows {
 		maxRowCount = 16
 	}
 	r.maxRowCounts = maxRowCount
+	r.values = make([][][]byte, maxRowCount)
 	r.msgs = make([]pgproto3.BackendMessage, maxRowCount+3)
 	r.msgBodies = make([][]byte, maxRowCount+3)
 

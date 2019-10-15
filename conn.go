@@ -429,25 +429,20 @@ where (
 		return err
 	}
 
-	for {
-		rowCounts := rows.Next()
-		if rowCounts <= 0 {
-			break
+	for rows.Next() {
+		var oid pgtype.OID
+		var name pgtype.Text
+		if err := rows.Scan(&oid, &name); err != nil {
+			return err
 		}
 
-		for i := 0; i < rowCounts; i++ {
-			var oid pgtype.OID
-			var name pgtype.Text
-			if err := rows.Scan(&oid, &name); err != nil {
-				return err
-			}
-			nameOIDs[name.String] = oid
-		}
-
-		if rows.Err() != nil {
-			return rows.Err()
-		}
+		nameOIDs[name.String] = oid
 	}
+
+	if rows.Err() != nil {
+		return rows.Err()
+	}
+
 	c.ConnInfo = pgtype.NewConnInfo()
 	c.ConnInfo.InitializeDataTypes(nameOIDs)
 	return nil
