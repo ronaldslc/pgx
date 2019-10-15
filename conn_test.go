@@ -1318,16 +1318,9 @@ func TestPrepareQueryManyParameters(t *testing.T) {
 			continue
 		}
 
-		for {
-			rc := rows.Next()
-			if rc <= 0 {
-				break
-			}
-
-			for i := 0; i < rc; i++ {
-				var s string
-				rows.Scan(&s)
-			}
+		for rows.Next() {
+			var s string
+			rows.Scan(&s)
 		}
 
 		if rows.Err() != nil {
@@ -1527,18 +1520,11 @@ func TestListenNotifyWhileBusyIsSafe(t *testing.T) {
 				t.Fatalf("conn.Query failed: %v", err)
 			}
 
-			for {
-				rc := rows.Next()
-				if rc <= 0 {
-					break
-				}
-
-				for i := 0; i < rc; i++ {
-					var n int32
-					rows.Scan(&n)
-					sum += n
-					rowCount++
-				}
+			for rows.Next() {
+				var n int32
+				rows.Scan(&n)
+				sum += n
+				rowCount++
 			}
 
 			if rows.Err() != nil {
