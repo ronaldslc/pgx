@@ -402,9 +402,8 @@ func (s *Stmt) QueryContext(ctx context.Context, argsV []driver.NamedValue) (dri
 }
 
 type Rows struct {
-	rows            *pgx.Rows
-	values          []interface{}
-	pendingRowCount int
+	rows   *pgx.Rows
+	values []interface{}
 }
 
 func (r *Rows) Columns() []string {
@@ -462,11 +461,8 @@ func (r *Rows) Next(dest []driver.Value) error {
 		}
 	}
 
-	if r.pendingRowCount <= 0 {
-		r.pendingRowCount = r.rows.Next()
-	}
-
-	if r.pendingRowCount <= 0 {
+	more := r.rows.Next()
+	if !more {
 		if r.rows.Err() == nil {
 			return io.EOF
 		} else {
@@ -485,7 +481,6 @@ func (r *Rows) Next(dest []driver.Value) error {
 			return err
 		}
 	}
-	r.pendingRowCount--
 
 	return nil
 }
