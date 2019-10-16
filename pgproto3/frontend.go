@@ -38,6 +38,15 @@ type Frontend struct {
 	rowDescription       RowDescription
 }
 
+// ring buffer structure to store non-decoded backend messages and its body
+type ReceivedMessages struct {
+	msgs      []BackendMessage
+	msgBodies [][]byte
+	rp        int // read position
+	wp        int // write position
+	readable  int // how many message can be read
+}
+
 func NewFrontend(r io.Reader, w io.Writer, rawConn syscall.RawConn) (*Frontend, error) {
 	// By historical reasons Postgres currently has 8KB send buffer inside,
 	// so here we want to have at least the same size buffer.
@@ -56,12 +65,8 @@ func (b *Frontend) Send(msg FrontendMessage) error {
 // given array(msgs, msgBodies) must be already allocated
 // non-decoded BackendMessage will be assigned to msgs, and message body ([][]byte) will be assigned to msgBodies
 // n is the maximum row count to get data row
-func (b *Frontend) Receive(n int, msgs []BackendMessage, msgBodies [][]byte) (int, error) {
-	if n < 0 || n > len(msgs) || n > len(msgBodies) {
-		return 0, errors.Errorf("invalid array length, n: [%d], msg: [%d], msgBodies: [%d]", n, len(msgs), len(msgBodies))
-	}
-
-	idx := 0 // the current index of messages(msgs)
+// returning int is the count of received messages
+func (b *Frontend) Receive(rmsgs *ReceivedMessages) error {
 	rowCounts := 0
 
 	header := make([]byte, 5) // current processing header
@@ -71,119 +76,197 @@ func (b *Frontend) Receive(n int, msgs []BackendMessage, msgBodies [][]byte) (in
 	msgWp := 0         // the write position of message body
 
 	for {
-		// read all data from RawConn
 		if b.rb.Avail() <= 0 {
-			for {
-				// non-blocking read to get data
-				rn, err := b.rb.ReadFromRawConn(b.rawConn, b.rb.Avail() <= 0)
-				if err != nil {
-					return 0, err
-				}
+			// read data from RawConn
+			_, err := b.rb.ReadFromRawConn(b.rawConn, true)
+			if err != nil {
+				return err
+			}
+		}
 
-				// no more data in reader or no space for buffer, break to decode data
-				if rn <= 0 || b.rb.Avail() == b.rb.N {
+		// decode message header and split message bodies
+		for {
+			if headerWp < 5 {
+				rn, err := b.rb.Read(header[headerWp:])
+				if err != nil {
+					return err
+				}
+				headerWp += rn
+
+				if headerWp < 5 {
 					break
 				}
-			}
-		}
 
-	nextMsg:
-		if headerWp < 5 {
-			rn, err := b.rb.Read(header[headerWp:])
-			if err != nil {
-				return 0, err
-			}
-			headerWp += rn
-
-			if headerWp < 5 {
-				continue
+				// complete read header
+				bodyLen := int(binary.BigEndian.Uint32(header[1:])) - 4
+				if bodyLen > 0 {
+					msgBody = make([]byte, bodyLen)
+				} else {
+					msgBody = nil
+				}
 			}
 
-			// complete read header
-			bodyLen := int(binary.BigEndian.Uint32(header[1:])) - 4
-			if bodyLen > 0 {
-				msgBody = make([]byte, bodyLen)
-			} else {
-				msgBody = nil
-			}
-		}
-
-		if msgBody != nil && b.rb.Avail() > 0 {
-			rn, err := b.rb.Read(msgBody[msgWp:])
-			if err != nil {
-				return 0, err
-			}
-			msgWp += rn
-		}
-
-		if msgWp == len(msgBody) {
-			done := false
-			var msg BackendMessage
-			switch header[0] {
-			case '1':
-				msg = &b.parseComplete
-			case '2':
-				msg = &b.bindComplete
-			case '3':
-				msg = &b.closeComplete
-			case 'A':
-				msg = &b.notificationResponse
-			case 'C':
-				msg = &b.commandComplete
-				done = true
-			case 'd':
-				msg = &b.copyData
-			case 'D':
-				msg = &b.dataRow
-				rowCounts++
-			case 'E':
-				msg = &b.errorResponse
-				done = true
-			case 'G':
-				msg = &b.copyInResponse
-			case 'H':
-				msg = &b.copyOutResponse
-			case 'I':
-				msg = &b.emptyQueryResponse
-			case 'K':
-				msg = &b.backendKeyData
-			case 'n':
-				msg = &b.noData
-			case 'N':
-				msg = &b.noticeResponse
-			case 'R':
-				msg = &b.authentication
-			case 'S':
-				msg = &b.parameterStatus
-			case 't':
-				msg = &b.parameterDescription
-			case 'T':
-				msg = &b.rowDescription
-			case 'V':
-				msg = &b.functionCallResponse
-			case 'W':
-				msg = &b.copyBothResponse
-			case 'Z':
-				msg = &b.readyForQuery
-			default:
-				return 0, errors.Errorf("unknown message type: %c", header[0])
+			if msgBody != nil && b.rb.Avail() > 0 {
+				rn, err := b.rb.Read(msgBody[msgWp:])
+				if err != nil {
+					return err
+				}
+				msgWp += rn
 			}
 
-			msgs[idx] = msg
-			msgBodies[idx] = msgBody
-			idx++
+			if msgWp == len(msgBody) {
+				done := false
+				var msg BackendMessage
+				switch header[0] {
+				case '1':
+					msg = &b.parseComplete
+				case '2':
+					msg = &b.bindComplete
+				case '3':
+					msg = &b.closeComplete
+				case 'A':
+					msg = &b.notificationResponse
+				case 'C':
+					msg = &b.commandComplete
+					done = true
+				case 'd':
+					msg = &b.copyData
+				case 'D':
+					msg = &b.dataRow
+					rowCounts++
+				case 'E':
+					msg = &b.errorResponse
+					done = true
+				case 'G':
+					msg = &b.copyInResponse
+				case 'H':
+					msg = &b.copyOutResponse
+				case 'I':
+					msg = &b.emptyQueryResponse
+				case 'K':
+					msg = &b.backendKeyData
+				case 'n':
+					msg = &b.noData
+				case 'N':
+					msg = &b.noticeResponse
+				case 'R':
+					msg = &b.authentication
+				case 'S':
+					msg = &b.parameterStatus
+				case 't':
+					msg = &b.parameterDescription
+				case 'T':
+					msg = &b.rowDescription
+				case 'V':
+					msg = &b.functionCallResponse
+				case 'W':
+					msg = &b.copyBothResponse
+				case 'Z':
+					msg = &b.readyForQuery
+				default:
+					return errors.Errorf("unknown message type: %c", header[0])
+				}
 
-			if done || idx >= len(msgs) || (n > 0 && rowCounts >= n) {
-				return idx, nil
+				if err := rmsgs.Write(msg, msgBody); err != nil {
+					return err
+				}
+
+				if done || rmsgs.WriteCapacity() <= 0 {
+					return nil
+				}
+
+				headerWp = 0
+				msgWp = 0
 			}
 
-			headerWp = 0
-			msgBody = nil
-			msgWp = 0
-
-			if b.rb.Avail() > 0 {
-				goto nextMsg
+			if b.rb.Avail() <= 0 {
+				break
 			}
 		}
 	}
+}
+
+func NewReceivedMessages(n int) *ReceivedMessages {
+	return &ReceivedMessages{msgs: make([]BackendMessage, n), msgBodies: make([][]byte, n)}
+}
+
+// function to get BackendMessage and its body
+func (r *ReceivedMessages) Read() (BackendMessage, []byte, error) {
+	if r.Readable() <= 0 {
+		return nil, nil, errors.New("no message")
+	}
+
+	rp := r.rp
+	if r.rp == len(r.msgs)-1 {
+		r.rp = 0
+	} else {
+		r.rp++
+	}
+	r.readable--
+	return r.msgs[rp], r.msgBodies[rp], nil
+}
+
+// function to store BackendMessage and its body
+// this function would not overwrite the messages which are not yet read
+func (r *ReceivedMessages) Write(msg BackendMessage, msgBody []byte) error {
+	if r.WriteCapacity() <= 0 {
+		return io.ErrShortWrite
+	}
+
+	r.msgs[r.wp] = msg
+	r.msgBodies[r.wp] = msgBody
+	if r.wp == len(r.msgs)-1 {
+		r.wp = 0
+	} else {
+		r.wp++
+	}
+	r.readable++
+
+	return nil
+}
+
+// return the count of message that is not yet read
+func (r ReceivedMessages) Readable() int {
+	return r.readable
+}
+
+// return the count of space that allow to be written
+func (r ReceivedMessages) WriteCapacity() int {
+	return len(r.msgs) - r.Readable()
+}
+
+// moved 1 read message backward, it will not backward if all messages are not yet read
+func (r *ReceivedMessages) Backward() {
+	if r.WriteCapacity() <= 0 {
+		return
+	}
+	r.readable += 1
+	if r.wp == 0 {
+		r.wp = len(r.msgs) - 1
+	} else {
+		r.wp -= 1
+	}
+	if r.rp == 0 {
+		r.rp = len(r.msgs) - 1
+	} else {
+		r.rp -= 1
+	}
+}
+
+// skip 1 message which is not yet read, it will not forward if no readable messages
+func (r *ReceivedMessages) Forward() {
+	if r.Readable() <= 0 {
+		return
+	}
+	if r.wp == len(r.msgs)-1 {
+		r.wp = 0
+	} else {
+		r.wp++
+	}
+	if r.rp == len(r.msgs)-1 {
+		r.rp = 0
+	} else {
+		r.rp++
+	}
+	r.readable++
 }

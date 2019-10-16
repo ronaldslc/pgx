@@ -1167,14 +1167,8 @@ func (c *Conn) rxMsg() (pgproto3.BackendMessage, error) {
 		return nil, ErrDeadConn
 	}
 
-	msgs := make([]pgproto3.BackendMessage, 1)
-	msgBodies := make([][]byte, 1)
-
-	_, err := c.frontend.Receive(1, msgs, msgBodies)
-	if err == nil {
-		err = msgs[0].Decode(msgBodies[0])
-	}
-
+	rmsgs := pgproto3.NewReceivedMessages(1)
+	err := c.frontend.Receive(rmsgs)
 	if err != nil {
 		if netErr, ok := err.(net.Error); !(ok && netErr.Timeout()) {
 			c.die(err)
@@ -1182,11 +1176,20 @@ func (c *Conn) rxMsg() (pgproto3.BackendMessage, error) {
 		return nil, err
 	}
 
+	msg, msgBody, err := rmsgs.Read()
+	if err != nil {
+		return nil, err
+	}
+
+	if err = msg.Decode(msgBody); err != nil {
+		return nil, err
+	}
+
 	c.lastActivityTime = time.Now()
 
 	// fmt.Printf("rxMsg: %#v\n", msg)
 
-	return msgs[0], nil
+	return msg, nil
 }
 
 func (c *Conn) rxAuthenticationX(msg *pgproto3.Authentication) (err error) {

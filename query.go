@@ -57,10 +57,7 @@ type Rows struct {
 	unlockConn bool
 	closed     bool
 
-	maxRowCounts    int                       // the count of maximum row return when calling Next
-	msgs            []pgproto3.BackendMessage // the cached non-decoded message in batchRead, will be pre-allocated when structure made in getRows
-	msgBodies       [][]byte                  // the cached message body in batchRead, will be pre-allocated when structure made in getRows
-	pendingMsgCount int                       // the non processed message count, used to get cached message and body
+	msgs *pgproto3.ReceivedMessages // the received non-decoded messages
 
 	// the count of row which need to be read in Scan
 	// if it is large then rowIdx, rows.Next will not get the row data from Reader
@@ -155,20 +152,24 @@ func (rows *Rows) BatchNext() int {
 	rows.rowIdx = 0
 	rows.pendingRowCount = 0
 
-	for idx := 0; idx < rows.pendingMsgCount; idx++ {
-		if _, ok := rows.msgs[idx].(*pgproto3.CommandComplete); ok && rows.pendingRowCount > 0 {
-			copy(rows.msgs, rows.msgs[idx:])
-			copy(rows.msgBodies, rows.msgBodies[idx:])
-			rows.pendingMsgCount = len(rows.msgs) - idx + 1
-			return rows.pendingRowCount
-		}
-
-		if err := rows.msgs[idx].Decode(rows.msgBodies[idx]); err != nil {
+	for idx := rows.msgs.Readable(); idx > 0; idx-- {
+		msg, msgBody, err := rows.msgs.Read()
+		if err != nil {
 			rows.fatal(err)
 			return 0
 		}
 
-		switch msg := rows.msgs[idx].(type) {
+		if _, ok := msg.(*pgproto3.CommandComplete); ok && rows.pendingRowCount > 0 {
+			rows.msgs.Backward()
+			return rows.pendingRowCount
+		}
+
+		if err := msg.Decode(msgBody); err != nil {
+			rows.fatal(err)
+			return 0
+		}
+
+		switch msg := msg.(type) {
 		case *pgproto3.RowDescription:
 			rows.fields = rows.conn.rxRowDescription(msg)
 			for i := range rows.fields {
@@ -206,10 +207,6 @@ func (rows *Rows) BatchNext() int {
 				return 0
 			}
 		}
-
-		// clean processed message and message body
-		rows.msgs[idx] = nil
-		rows.msgBodies[idx] = nil
 	}
 
 	if err := rows.batchRead(); err != nil {
@@ -243,7 +240,7 @@ func (rows *Rows) batchRead() (err error) {
 	if rows.closed {
 		return nil
 	}
-	rows.pendingMsgCount, err = rows.conn.frontend.Receive(rows.maxRowCounts, rows.msgs, rows.msgBodies)
+	err = rows.conn.frontend.Receive(rows.msgs)
 	if err != nil {
 		if netErr, ok := err.(net.Error); !(ok && netErr.Timeout()) {
 			rows.conn.die(err)
@@ -437,10 +434,9 @@ func (c *Conn) getRows(bufferSize int, sql string, args []interface{}) *Rows {
 		// default maximum buffer size to 100
 		bufferSize = 100
 	}
-	r.maxRowCounts = maxRowCount
-	r.values = make([][][]byte, maxRowCount)
-	r.msgs = make([]pgproto3.BackendMessage, maxRowCount+3)
-	r.msgBodies = make([][]byte, maxRowCount+3)
+	// pre-allocated value and message array capacity
+	r.values = make([][][]byte, bufferSize)
+	r.msgs = pgproto3.NewReceivedMessages(bufferSize)
 
 	return r
 }
