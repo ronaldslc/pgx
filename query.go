@@ -416,11 +416,11 @@ func (c *Conn) Query(sql string, args ...interface{}) (*Rows, error) {
 	return c.QueryEx(context.Background(), 0, sql, nil, args...)
 }
 
-func (c *Conn) QueryWithRowCount(maxRowCounts int, sql string, args ...interface{}) (*Rows, error) {
-	return c.QueryEx(context.Background(), maxRowCounts, sql, nil, args...)
+func (c *Conn) QueryWithBufferSize(bufferSize int, sql string, args ...interface{}) (*Rows, error) {
+	return c.QueryEx(context.Background(), bufferSize, sql, nil, args...)
 }
 
-func (c *Conn) getRows(maxRowCount int, sql string, args []interface{}) *Rows {
+func (c *Conn) getRows(bufferSize int, sql string, args []interface{}) *Rows {
 	if len(c.preallocatedRows) == 0 {
 		c.preallocatedRows = make([]Rows, 64)
 	}
@@ -433,9 +433,9 @@ func (c *Conn) getRows(maxRowCount int, sql string, args []interface{}) *Rows {
 	r.sql = sql
 	r.args = args
 
-	if maxRowCount <= 0 {
-		// default maximum receive row count to 100
-		maxRowCount = 100
+	if bufferSize <= 0 {
+		// default maximum buffer size to 100
+		bufferSize = 100
 	}
 	r.maxRowCounts = maxRowCount
 	r.values = make([][][]byte, maxRowCount)

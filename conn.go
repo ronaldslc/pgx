@@ -42,7 +42,7 @@ type IConn interface {
 	Exec(sql string, arguments ...interface{}) (commandTag CommandTag, err error)
 	Query(sql string, args ...interface{}) (*Rows, error)
 	QueryRow(sql string, args ...interface{}) *Row
-	QueryWithRowCount(maxRowCounts int, sql string, args ...interface{}) (*Rows, error)
+	QueryWithBufferSize(bufferSize int, sql string, args ...interface{}) (*Rows, error)
 	Prepare(name, sql string) (ps *PreparedStatement, err error)
 }
 

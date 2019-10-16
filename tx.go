@@ -216,14 +216,14 @@ func (tx *Tx) Query(sql string, args ...interface{}) (*Rows, error) {
 	return tx.conn.Query(sql, args...)
 }
 
-func (tx *Tx) QueryWithRowCount(maxRowCounts int, sql string, args ...interface{}) (*Rows, error) {
+func (tx *Tx) QueryWithBufferSize(bufferSize int, sql string, args ...interface{}) (*Rows, error) {
 	if tx.status != TxStatusInProgress {
 		// Because checking for errors can be deferred to the *Rows, build one with the error
 		err := ErrTxClosed
 		return &Rows{closed: true, err: err}, err
 	}
 
-	return tx.conn.QueryWithRowCount(maxRowCounts, sql, args...)
+	return tx.conn.QueryWithBufferSize(bufferSize, sql, args...)
 }
 
 // QueryRow delegates to the underlying *Conn
