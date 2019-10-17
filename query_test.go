@@ -36,7 +36,7 @@ func TestConnQueryScan(t *testing.T) {
 	}
 
 	if rows.Err() != nil {
-		t.Fatalf("conn.Query failed: %v", err)
+		t.Fatalf("conn.Query failed: %v", rows.Err())
 	}
 
 	if rowCount != 10 {
