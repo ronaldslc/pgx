@@ -461,15 +461,6 @@ type QueryExOptions struct {
 }
 
 func (c *Conn) QueryEx(ctx context.Context, maxRowCount int, sql string, options *QueryExOptions, args ...interface{}) (rows *Rows, err error) {
-	defer func() {
-		if rows != nil && err == nil {
-			if nerr := rows.batchRead(); nerr != nil {
-				rows.fatal(nerr)
-				return
-			}
-		}
-	}()
-
 	err = c.waitForPreviousCancelQuery(ctx)
 	if err != nil {
 		return nil, err
