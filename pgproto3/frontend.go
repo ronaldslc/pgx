@@ -74,8 +74,8 @@ func (b *Frontend) Receive(rmsgs *ReceivedMessages) error {
 	var msgBody []byte      // current processing message body
 	var msgBodySlice []byte // the message body slice to read
 
-	// loop until at least 1 message
-	for rmsgs.Readable() <= 0 {
+	// loop until at least 1 message and make sure header does not have any data read before return, so the header data will not lost
+	for rmsgs.Readable() <= 0 || len(headerSlice) < len(header) {
 		_, err := b.rb.ReadFromRawConn(b.rawConn)
 		if err != nil {
 			return err
@@ -228,7 +228,7 @@ func (r *ReceivedMessages) Forward() {
 	} else {
 		r.rp++
 	}
-	r.readable++
+	r.readable--
 }
 
 // update ReceivedMessages capacity, it will copy existing BackendMessage and message body to new array
