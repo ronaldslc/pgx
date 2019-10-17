@@ -36,7 +36,7 @@ func TestConnQueryScan(t *testing.T) {
 	}
 
 	if rows.Err() != nil {
-		t.Fatalf("conn.Query failed: %v", err)
+		t.Fatalf("conn.Query failed: %v", rows.Err())
 	}
 
 	if rowCount != 10 {
@@ -813,7 +813,6 @@ func TestQueryRowErrors(t *testing.T) {
 		scanArgs  []interface{}
 		err       string
 	}{
-		{"select $1", []interface{}{"Jack"}, []interface{}{&actual.i16}, "could not determine data type of parameter $1 (SQLSTATE 42P18)"},
 		{"select $1::badtype", []interface{}{"Jack"}, []interface{}{&actual.i16}, `type "badtype" does not exist`},
 		{"SYNTAX ERROR", []interface{}{}, []interface{}{&actual.i16}, "SQLSTATE 42601"},
 		{"select $1::text", []interface{}{"Jack"}, []interface{}{&actual.i16}, "cannot decode"},
@@ -1029,7 +1028,7 @@ func TestQueryExContextSuccess(t *testing.T) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	rows, err := conn.QueryEx(ctx, "select 42::integer", nil)
+	rows, err := conn.QueryEx(ctx, 1, "select 42::integer", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1066,7 +1065,7 @@ func TestQueryExContextErrorWhileReceivingRows(t *testing.T) {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
-	rows, err := conn.QueryEx(ctx, "select 10/(10-n) from generate_series(1, 100) n", nil)
+	rows, err := conn.QueryEx(ctx, 1, "select 10/(10-n) from generate_series(1, 100) n", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1106,7 +1105,7 @@ func TestQueryExContextCancelationCancelsQuery(t *testing.T) {
 		cancelFunc()
 	}()
 
-	rows, err := conn.QueryEx(ctx, "select pg_sleep(5)", nil)
+	rows, err := conn.QueryEx(ctx, 0, "select pg_sleep(5)", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1202,7 +1201,7 @@ func TestConnQueryRowExSingleRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result != 3 {
-		t.Fatal("result => %d, want %d", result, 3)
+		t.Fatalf("result => %d, want %d", result, 3)
 	}
 
 	ensureConnValid(t, conn)

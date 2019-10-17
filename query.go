@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/pkg/errors"
@@ -45,7 +46,7 @@ type Rows struct {
 	conn       *Conn
 	connPool   *ConnPool
 	batch      *Batch
-	values     [][]byte
+	values     [][][]byte
 	fields     []FieldDescription
 	rowCount   int
 	columnIdx  int
@@ -55,6 +56,12 @@ type Rows struct {
 	args       []interface{}
 	unlockConn bool
 	closed     bool
+
+	// the count of row which need to be read in Scan
+	// if it is large then rowIdx, rows.Next will not get the row data from Reader
+	// and return the pendingRowCount - rowIdx
+	pendingRowCount int
+	rowIdx          int // the index of not yet scanned row
 }
 
 func (rows *Rows) FieldDescriptions() []FieldDescription {
@@ -118,22 +125,47 @@ func (rows *Rows) fatal(err error) {
 	rows.Close()
 }
 
-// Next prepares the next row for reading. It returns true if there is another
+// Next prepares the next rows for reading. It returns true if there is another
 // row and false if no more rows are available. It automatically closes rows
 // when all rows are read.
 func (rows *Rows) Next() bool {
+	return rows.BatchNext() > 0
+}
+
+// BatchNext prepares the next rows for reading. It returns row count (int) which more then 0 if there is another
+// row and 0 if no more rows are available. It automatically closes rows
+// when all rows are read.
+func (rows *Rows) BatchNext() int {
 	if rows.closed {
-		return false
+		return 0
 	}
 
-	rows.rowCount++
-	rows.columnIdx = 0
+	// if there are rows which are no yet read, return the count
+	if rows.pendingRowCount > rows.rowIdx {
+		return rows.pendingRowCount - rows.rowIdx
+	}
 
-	for {
-		msg, err := rows.conn.rxMsg()
+	// reset index and count
+	rows.columnIdx = 0
+	rows.rowIdx = 0
+	rows.pendingRowCount = 0
+
+	outer:
+	for idx := rows.conn.rmsgs.Readable(); idx > 0; idx-- {
+		msg, msgBody, err := rows.conn.rmsgs.Read()
 		if err != nil {
 			rows.fatal(err)
-			return false
+			return 0
+		}
+
+		if _, ok := msg.(*pgproto3.CommandComplete); ok && rows.pendingRowCount > 0 {
+			rows.conn.rmsgs.Backward()
+			return rows.pendingRowCount
+		}
+
+		if err := msg.Decode(msgBody); err != nil {
+			rows.fatal(err)
+			return 0
 		}
 
 		switch msg := msg.(type) {
@@ -145,29 +177,49 @@ func (rows *Rows) Next() bool {
 					rows.fields[i].FormatCode = TextFormatCode
 				} else {
 					rows.fatal(errors.Errorf("unknown oid: %d", rows.fields[i].DataType))
-					return false
+					return 0
 				}
 			}
 		case *pgproto3.DataRow:
 			if len(msg.Values) != len(rows.fields) {
 				rows.fatal(ProtocolError(fmt.Sprintf("Row description field count (%v) and data row field count (%v) do not match", len(rows.fields), len(msg.Values))))
-				return false
+				return 0
 			}
 
-			rows.values = msg.Values
-			return true
+			rows.values[rows.pendingRowCount] = make([][]byte, len(msg.Values))
+			for i := range msg.Values {
+				if msg.Values[i] != nil {
+					rows.values[rows.pendingRowCount][i] = make([]byte, len(msg.Values[i]))
+					copy(rows.values[rows.pendingRowCount][i], msg.Values[i])
+				}
+			}
+			rows.rowCount++
+			rows.pendingRowCount++
+			if rows.pendingRowCount >= len(rows.values) {
+				break outer
+			}
 		case *pgproto3.CommandComplete:
+			rows.rowCount++
 			rows.Close()
-			return false
-
+			return 0
 		default:
-			err = rows.conn.processContextFreeMsg(msg)
+			err := rows.conn.processContextFreeMsg(msg)
 			if err != nil {
 				rows.fatal(err)
-				return false
+				return 0
 			}
 		}
 	}
+
+	if err := rows.batchRead(); err != nil {
+		rows.fatal(err)
+		return 0
+	}
+
+	if rows.pendingRowCount == 0 {
+		return rows.BatchNext()
+	}
+	return rows.pendingRowCount
 }
 
 func (rows *Rows) nextColumn() ([]byte, *FieldDescription, bool) {
@@ -179,10 +231,24 @@ func (rows *Rows) nextColumn() ([]byte, *FieldDescription, bool) {
 		return nil, nil, false
 	}
 
-	buf := rows.values[rows.columnIdx]
+	buf := rows.values[rows.rowIdx][rows.columnIdx]
 	fd := &rows.fields[rows.columnIdx]
 	rows.columnIdx++
 	return buf, fd, true
+}
+
+// function to batch get message and message body and stored to Rows
+func (rows *Rows) batchRead() (err error) {
+	if rows.closed {
+		return nil
+	}
+	err = rows.conn.frontend.Receive(rows.conn.rmsgs)
+	if err != nil {
+		if netErr, ok := err.(net.Error); !(ok && netErr.Timeout()) {
+			rows.conn.die(err)
+		}
+	}
+	return
 }
 
 type scanArgError struct {
@@ -198,12 +264,21 @@ func (e scanArgError) Error() string {
 // dest can include pointers to core types, values implementing the Scanner
 // interface, []byte, and nil. []byte will skip the decoding process and directly
 // copy the raw bytes received from PostgreSQL. nil will skip the value entirely.
+// NOTE: Scan can only be called once to get a row data, the next Scan will get the next row data if exist
 func (rows *Rows) Scan(dest ...interface{}) (err error) {
 	if len(rows.fields) != len(dest) {
 		err = errors.Errorf("Scan received wrong number of arguments, got %d but expected %d", len(dest), len(rows.fields))
 		rows.fatal(err)
 		return err
 	}
+
+	if rows.rowIdx >= rows.pendingRowCount {
+		err = errors.New("no row data")
+		rows.fatal(err)
+		return err
+	}
+
+	rows.columnIdx = 0
 
 	for i, d := range dest {
 		buf, fd, _ := rows.nextColumn()
@@ -271,6 +346,7 @@ func (rows *Rows) Scan(dest ...interface{}) (err error) {
 			return rows.Err()
 		}
 	}
+	rows.rowIdx++
 
 	return nil
 }
@@ -282,6 +358,7 @@ func (rows *Rows) Values() ([]interface{}, error) {
 	}
 
 	values := make([]interface{}, 0, len(rows.fields))
+	rows.columnIdx = 0
 
 	for range rows.fields {
 		buf, fd, _ := rows.nextColumn()
@@ -326,6 +403,7 @@ func (rows *Rows) Values() ([]interface{}, error) {
 			return nil, rows.Err()
 		}
 	}
+	rows.rowIdx++
 
 	return values, rows.Err()
 }
@@ -334,10 +412,14 @@ func (rows *Rows) Values() ([]interface{}, error) {
 // be returned in an error state. So it is allowed to ignore the error returned
 // from Query and handle it in *Rows.
 func (c *Conn) Query(sql string, args ...interface{}) (*Rows, error) {
-	return c.QueryEx(context.Background(), sql, nil, args...)
+	return c.QueryEx(context.Background(), 0, sql, nil, args...)
 }
 
-func (c *Conn) getRows(sql string, args []interface{}) *Rows {
+func (c *Conn) QueryWithBufferSize(bufferSize int, sql string, args ...interface{}) (*Rows, error) {
+	return c.QueryEx(context.Background(), bufferSize, sql, nil, args...)
+}
+
+func (c *Conn) getRows(bufferSize int, sql string, args []interface{}) *Rows {
 	if len(c.preallocatedRows) == 0 {
 		c.preallocatedRows = make([]Rows, 64)
 	}
@@ -349,6 +431,17 @@ func (c *Conn) getRows(sql string, args []interface{}) *Rows {
 	r.startTime = c.lastActivityTime
 	r.sql = sql
 	r.args = args
+
+	if bufferSize <= 0 {
+		// default maximum buffer size to 100
+		bufferSize = 100
+	}
+	// pre-allocated value and message array capacity
+	r.values = make([][][]byte, bufferSize)
+
+	if c.rmsgs.Len() < bufferSize {
+		c.rmsgs.SetCapacity(bufferSize)
+	}
 
 	return r
 }
@@ -371,7 +464,7 @@ type QueryExOptions struct {
 	SimpleProtocol bool
 }
 
-func (c *Conn) QueryEx(ctx context.Context, sql string, options *QueryExOptions, args ...interface{}) (rows *Rows, err error) {
+func (c *Conn) QueryEx(ctx context.Context, maxRowCount int, sql string, options *QueryExOptions, args ...interface{}) (rows *Rows, err error) {
 	err = c.waitForPreviousCancelQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -383,7 +476,7 @@ func (c *Conn) QueryEx(ctx context.Context, sql string, options *QueryExOptions,
 
 	c.lastActivityTime = time.Now()
 
-	rows = c.getRows(sql, args)
+	rows = c.getRows(maxRowCount, sql, args)
 
 	if err := c.lock(); err != nil {
 		rows.fatal(err)
@@ -552,6 +645,6 @@ func (c *Conn) sanitizeAndSendSimpleQuery(sql string, args ...interface{}) (err 
 }
 
 func (c *Conn) QueryRowEx(ctx context.Context, sql string, options *QueryExOptions, args ...interface{}) *Row {
-	rows, _ := c.QueryEx(ctx, sql, options, args...)
+	rows, _ := c.QueryEx(ctx, 1, sql, options, args...)
 	return (*Row)(rows)
 }

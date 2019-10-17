@@ -162,10 +162,10 @@ func BenchmarkPointerPointerWithPresentValues(b *testing.B) {
 		if record.sex == nil || *record.sex != "male" {
 			b.Fatalf("bad value for sex: %v", record.sex)
 		}
-		if record.birthDate == nil || *record.birthDate != time.Date(1970, 1, 1, 0, 0, 0, 0, time.Local) {
+		if record.birthDate == nil || *record.birthDate != time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC) {
 			b.Fatalf("bad value for birthDate: %v", record.birthDate)
 		}
-		if record.lastLoginTime == nil || *record.lastLoginTime != time.Date(2015, 1, 1, 0, 0, 0, 0, time.Local) {
+		if record.lastLoginTime == nil || !record.lastLoginTime.Equal(time.Date(2015, 1, 1, 0, 0, 0, 0, time.UTC)) {
 			b.Fatalf("bad value for lastLoginTime: %v", record.lastLoginTime)
 		}
 	}
@@ -274,10 +274,10 @@ func benchmarkSelectWithLog(b *testing.B, conn *pgx.Conn) {
 		if record.sex != "male" {
 			b.Fatalf("bad value for sex: %v", record.sex)
 		}
-		if record.birthDate != time.Date(1970, 1, 1, 0, 0, 0, 0, time.Local) {
+		if record.birthDate != time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC) {
 			b.Fatalf("bad value for birthDate: %v", record.birthDate)
 		}
-		if record.lastLoginTime != time.Date(2015, 1, 1, 0, 0, 0, 0, time.Local) {
+		if !record.lastLoginTime.Equal(time.Date(2015, 1, 1, 0, 0, 0, 0, time.UTC)) {
 			b.Fatalf("bad value for lastLoginTime: %v", record.lastLoginTime)
 		}
 	}
@@ -357,12 +357,12 @@ func newBenchmarkWriteTableCopyFromSrc(count int) pgx.CopyFromSource {
 		row: []interface{}{
 			"varchar_1",
 			"varchar_2",
-			pgtype.Text{},
+			&pgtype.Text{Status: pgtype.Null},
 			time.Date(2000, 1, 1, 0, 0, 0, 0, time.Local),
-			pgtype.Date{},
+			&pgtype.Date{Status: pgtype.Null},
 			1,
 			2,
-			pgtype.Int4{},
+			&pgtype.Int4{Status: pgtype.Null},
 			time.Date(2001, 1, 1, 0, 0, 0, 0, time.Local),
 			time.Date(2002, 1, 1, 0, 0, 0, 0, time.Local),
 			true,

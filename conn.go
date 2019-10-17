@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/pkg/errors"
@@ -41,6 +42,7 @@ type IConn interface {
 	Exec(sql string, arguments ...interface{}) (commandTag CommandTag, err error)
 	Query(sql string, args ...interface{}) (*Rows, error)
 	QueryRow(sql string, args ...interface{}) *Row
+	QueryWithBufferSize(bufferSize int, sql string, args ...interface{}) (*Rows, error)
 	Prepare(name, sql string) (ps *PreparedStatement, err error)
 }
 
@@ -130,7 +132,7 @@ type Conn struct {
 	status       byte // One of connStatus* constants
 	causeOfDeath error
 
-	pendingReadyForQueryCount int // numer of ReadyForQuery messages expected
+	pendingReadyForQueryCount int // number of ReadyForQuery messages expected
 	cancelQueryInProgress     int32
 	cancelQueryCompleted      chan struct{}
 
@@ -142,6 +144,7 @@ type Conn struct {
 	ConnInfo *pgtype.ConnInfo
 
 	frontend *pgproto3.Frontend
+	rmsgs *pgproto3.ReceivedMessages //the received array of non-decoded BackendMessage
 }
 
 // PreparedStatement is a description of a prepared statement
@@ -317,6 +320,7 @@ func (c *Conn) connect(config ConnConfig, network, address string, tlsConfig *tl
 	c.doneChan = make(chan struct{})
 	c.closedChan = make(chan error)
 	c.wbuf = make([]byte, 0, 1024)
+	c.rmsgs = pgproto3.NewReceivedMessages(100) // default maximum received message count to 100
 
 	c.mux.Lock()
 	c.status = connStatusIdle
@@ -331,7 +335,14 @@ func (c *Conn) connect(config ConnConfig, network, address string, tlsConfig *tl
 		}
 	}
 
-	c.frontend, err = pgproto3.NewFrontend(c.conn, c.conn)
+	var rawConn syscall.RawConn
+	if sc, ok := c.conn.(syscall.Conn); ok {
+		if rawConn, err = sc.SyscallConn(); err != nil {
+			return err
+		}
+	}
+
+	c.frontend, err = pgproto3.NewFrontend(c.conn, c.conn, rawConn)
 	if err != nil {
 		return err
 	}
@@ -1158,11 +1169,20 @@ func (c *Conn) rxMsg() (pgproto3.BackendMessage, error) {
 		return nil, ErrDeadConn
 	}
 
-	msg, err := c.frontend.Receive()
+	err := c.frontend.Receive(c.rmsgs)
 	if err != nil {
 		if netErr, ok := err.(net.Error); !(ok && netErr.Timeout()) {
 			c.die(err)
 		}
+		return nil, err
+	}
+
+	msg, msgBody, err := c.rmsgs.Read()
+	if err != nil {
+		return nil, err
+	}
+
+	if err = msg.Decode(msgBody); err != nil {
 		return nil, err
 	}
 

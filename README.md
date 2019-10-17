@@ -14,6 +14,8 @@ This is a fork of the v3 branch of jackc/pgx!
 * Addition of tx.LocalStore
 * pgtype.timestamptz provides UnmarshalJSON and MarshalJSON
 * Has ability to lazy prepare
+* IConn.Query and Rows.Next can batch read to get multiple rows
+* Used ring buffer to replace chunk reader
 
 ## Features
 

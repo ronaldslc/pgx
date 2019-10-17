@@ -382,6 +382,24 @@ func (p *ConnPool) Query(sql string, args ...interface{}) (*Rows, error) {
 	return rows, nil
 }
 
+func (p *ConnPool) QueryWithBufferSize(bufferSize int, sql string, args ...interface{}) (*Rows, error) {
+	c, err := p.Acquire()
+	if err != nil {
+		// Because checking for errors can be deferred to the *Rows, build one with the error
+		return &Rows{closed: true, err: err}, err
+	}
+
+	rows, err := c.QueryWithBufferSize(bufferSize, sql, args...)
+	if err != nil {
+		p.Release(c)
+		return rows, err
+	}
+
+	rows.connPool = p
+
+	return rows, nil
+}
+
 func (p *ConnPool) QueryEx(ctx context.Context, sql string, options *QueryExOptions, args ...interface{}) (*Rows, error) {
 	c, err := p.Acquire()
 	if err != nil {
@@ -389,7 +407,7 @@ func (p *ConnPool) QueryEx(ctx context.Context, sql string, options *QueryExOpti
 		return &Rows{closed: true, err: err}, err
 	}
 
-	rows, err := c.QueryEx(ctx, sql, options, args...)
+	rows, err := c.QueryEx(ctx, 0, sql, options, args...)
 	if err != nil {
 		p.Release(c)
 		return rows, err

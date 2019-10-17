@@ -176,7 +176,7 @@ func (b *Batch) ExecResults() (CommandTag, error) {
 // QueryResults reads the results from the next query in the batch as if the
 // query has been sent with Query.
 func (b *Batch) QueryResults() (*Rows, error) {
-	rows := b.conn.getRows("batch query", nil)
+	rows := b.conn.getRows(0, "batch query", nil)
 
 	if b.err != nil {
 		rows.fatal(b.err)
