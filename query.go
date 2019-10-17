@@ -439,6 +439,10 @@ func (c *Conn) getRows(bufferSize int, sql string, args []interface{}) *Rows {
 	// pre-allocated value and message array capacity
 	r.values = make([][][]byte, bufferSize)
 
+	if c.rmsgs.Len() < bufferSize {
+		c.rmsgs.SetCapacity(bufferSize)
+	}
+
 	return r
 }
 
