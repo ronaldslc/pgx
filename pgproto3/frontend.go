@@ -150,13 +150,21 @@ func (r *ReceivedMessages) Read() (BackendMessage, []byte, error) {
 	}
 
 	rp := r.rp
-	if r.rp == len(r.msgs)-1 {
+	if r.rp == r.Len()-1 {
 		r.rp = 0
 	} else {
 		r.rp++
 	}
 	r.readable--
 	return r.msgs[rp], r.msgBodies[rp], nil
+}
+
+// function to BackendMessage and its body by index (k)
+// the start point is (r.rp + k) % r.Len()
+// this function will not forward moved message forward
+func (r *ReceivedMessages) Kth(k int) (BackendMessage, []byte) {
+	rp := (r.rp + k) % r.Len()
+	return r.msgs[rp], r.msgBodies[rp]
 }
 
 // function to store BackendMessage and its body
@@ -168,7 +176,7 @@ func (r *ReceivedMessages) Write(msg BackendMessage, msgBody []byte) error {
 
 	r.msgs[r.wp] = msg
 	r.msgBodies[r.wp] = msgBody
-	if r.wp == len(r.msgs)-1 {
+	if r.wp == r.Len()-1 {
 		r.wp = 0
 	} else {
 		r.wp++
@@ -188,17 +196,16 @@ func (r ReceivedMessages) WriteCapacity() int {
 	return len(r.msgs) - r.Readable()
 }
 
+func (r ReceivedMessages) Len() int {
+	return len(r.msgs)
+}
+
 // moved 1 read message backward, it will not backward if all messages are not yet read
 func (r *ReceivedMessages) Backward() {
 	if r.WriteCapacity() <= 0 {
 		return
 	}
 	r.readable += 1
-	if r.wp == 0 {
-		r.wp = len(r.msgs) - 1
-	} else {
-		r.wp -= 1
-	}
 	if r.rp == 0 {
 		r.rp = len(r.msgs) - 1
 	} else {
@@ -211,15 +218,33 @@ func (r *ReceivedMessages) Forward() {
 	if r.Readable() <= 0 {
 		return
 	}
-	if r.wp == len(r.msgs)-1 {
-		r.wp = 0
-	} else {
-		r.wp++
-	}
 	if r.rp == len(r.msgs)-1 {
 		r.rp = 0
 	} else {
 		r.rp++
 	}
 	r.readable++
+}
+
+func (r *ReceivedMessages) SetCapacity(capacity int) {
+	if r.Len() == capacity {
+		return
+	}
+
+	nmsgs := make([]BackendMessage, capacity)
+	nmsgBodies := make([][]byte, capacity)
+
+	if r.Readable() > capacity {
+		r.rp = (r.rp + r.readable - capacity) % r.Len()
+		r.readable = capacity
+	}
+
+	copy(nmsgs, r.msgs[r.rp:])
+	copy(nmsgBodies, r.msgBodies[r.rp:])
+	copy(nmsgs[r.rp:], r.msgs[0:r.wp])
+	copy(nmsgBodies[r.rp:], r.msgBodies[0:r.wp])
+
+	r.rp = 0
+	r.wp = r.readable
+	return
 }
