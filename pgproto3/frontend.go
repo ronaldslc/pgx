@@ -14,28 +14,7 @@ type Frontend struct {
 	rb      *rbuf.FixedSizeRingBuf
 	w       io.Writer
 
-	// Backend message flyweights
-	authentication       Authentication
-	backendKeyData       BackendKeyData
-	bindComplete         BindComplete
-	closeComplete        CloseComplete
-	commandComplete      CommandComplete
-	copyBothResponse     CopyBothResponse
-	copyData             CopyData
-	copyInResponse       CopyInResponse
-	copyOutResponse      CopyOutResponse
-	dataRow              DataRow
-	emptyQueryResponse   EmptyQueryResponse
-	errorResponse        ErrorResponse
-	functionCallResponse FunctionCallResponse
-	noData               NoData
-	noticeResponse       NoticeResponse
-	notificationResponse NotificationResponse
-	parameterDescription ParameterDescription
-	parameterStatus      ParameterStatus
-	parseComplete        ParseComplete
-	readyForQuery        ReadyForQuery
-	rowDescription       RowDescription
+	backendMsgFlyweights [256]BackendMessage
 }
 
 // ring buffer structure to store non-decoded backend messages and its body
@@ -53,7 +32,31 @@ func NewFrontend(r io.Reader, w io.Writer, rawConn syscall.RawConn) (*Frontend, 
 	// @see https://github.com/postgres/postgres/blob/249d64999615802752940e017ee5166e726bc7cd/src/backend/libpq/pqcomm.c#L134
 	// @see https://www.postgresql.org/message-id/0cdc5485-cb3c-5e16-4a46-e3b2f7a41322%40ya.ru
 	rb := rbuf.NewFixedSizeRingBuf(8192)
-	return &Frontend{rb: rb, w: w, rawConn: rawConn}, nil
+	b := &Frontend{rb: rb, w: w, rawConn: rawConn}
+
+	b.backendMsgFlyweights[uint8('1')] = &ParseComplete{}
+	b.backendMsgFlyweights[uint8('2')] = &BindComplete{}
+	b.backendMsgFlyweights[uint8('3')] = &CloseComplete{}
+	b.backendMsgFlyweights[uint8('A')] = &NotificationResponse{}
+	b.backendMsgFlyweights[uint8('C')] = &CommandComplete{}
+	b.backendMsgFlyweights[uint8('d')] = &CopyData{}
+	b.backendMsgFlyweights[uint8('D')] = &DataRow{}
+	b.backendMsgFlyweights[uint8('E')] = &ErrorResponse{}
+	b.backendMsgFlyweights[uint8('G')] = &CopyInResponse{}
+	b.backendMsgFlyweights[uint8('H')] = &CopyOutResponse{}
+	b.backendMsgFlyweights[uint8('I')] = &EmptyQueryResponse{}
+	b.backendMsgFlyweights[uint8('K')] = &BackendKeyData{}
+	b.backendMsgFlyweights[uint8('n')] = &NoData{}
+	b.backendMsgFlyweights[uint8('N')] = &NoticeResponse{}
+	b.backendMsgFlyweights[uint8('R')] = &Authentication{}
+	b.backendMsgFlyweights[uint8('S')] = &ParameterStatus{}
+	b.backendMsgFlyweights[uint8('t')] = &ParameterDescription{}
+	b.backendMsgFlyweights[uint8('T')] = &RowDescription{}
+	b.backendMsgFlyweights[uint8('V')] = &FunctionCallResponse{}
+	b.backendMsgFlyweights[uint8('W')] = &CopyBothResponse{}
+	b.backendMsgFlyweights[uint8('Z')] = &ReadyForQuery{}
+
+	return b, nil
 }
 
 func (b *Frontend) Send(msg FrontendMessage) error {
@@ -67,123 +70,73 @@ func (b *Frontend) Send(msg FrontendMessage) error {
 // n is the maximum row count to get data row
 // returning int is the count of received messages
 func (b *Frontend) Receive(rmsgs *ReceivedMessages) error {
-	rowCounts := 0
+	var header [5]byte       // the header array to get message type and body length
+	headerSlice := header[:] // the header slice to read
 
-	header := make([]byte, 5) // current processing header
-	headerWp := 0             // the write position of header
+	var msgBody []byte      // current processing message body
+	var msgBodySlice []byte // the message body slice to read
 
-	var msgBody []byte // current processing message body
-	msgWp := 0         // the write position of message body
+	// loop until at least 1 message and no data
+	for rmsgs.Readable() <= 0 {
+		_, err := b.rb.ReadFromRawConn(b.rawConn)
+		if err != nil {
+			return err
+		}
 
-	for {
-		if b.rb.Avail() <= 0 {
-			// read data from RawConn
-			_, err := b.rb.ReadFromRawConn(b.rawConn, true)
+		// decode the message header and write message and its body to ReceivedMessages
+		for b.rb.Avail() > 0 {
+			// header
+			rn, err := b.rb.Read(headerSlice)
 			if err != nil {
 				return err
 			}
-		}
+			headerSlice = headerSlice[rn:]
 
-		// decode message header and split message bodies
-		for {
-			if headerWp < 5 {
-				rn, err := b.rb.Read(header[headerWp:])
-				if err != nil {
-					return err
-				}
-				headerWp += rn
-
-				if headerWp < 5 {
-					break
-				}
-
-				// complete read header
-				bodyLen := int(binary.BigEndian.Uint32(header[1:])) - 4
-				if bodyLen > 0 {
-					msgBody = make([]byte, bodyLen)
-				} else {
-					msgBody = nil
-				}
-			}
-
-			if msgBody != nil && b.rb.Avail() > 0 {
-				rn, err := b.rb.Read(msgBody[msgWp:])
-				if err != nil {
-					return err
-				}
-				msgWp += rn
-			}
-
-			if msgWp == len(msgBody) {
-				done := false
-				var msg BackendMessage
-				switch header[0] {
-				case '1':
-					msg = &b.parseComplete
-				case '2':
-					msg = &b.bindComplete
-				case '3':
-					msg = &b.closeComplete
-				case 'A':
-					msg = &b.notificationResponse
-				case 'C':
-					msg = &b.commandComplete
-					done = true
-				case 'd':
-					msg = &b.copyData
-				case 'D':
-					msg = &b.dataRow
-					rowCounts++
-				case 'E':
-					msg = &b.errorResponse
-					done = true
-				case 'G':
-					msg = &b.copyInResponse
-				case 'H':
-					msg = &b.copyOutResponse
-				case 'I':
-					msg = &b.emptyQueryResponse
-				case 'K':
-					msg = &b.backendKeyData
-				case 'n':
-					msg = &b.noData
-				case 'N':
-					msg = &b.noticeResponse
-				case 'R':
-					msg = &b.authentication
-				case 'S':
-					msg = &b.parameterStatus
-				case 't':
-					msg = &b.parameterDescription
-				case 'T':
-					msg = &b.rowDescription
-				case 'V':
-					msg = &b.functionCallResponse
-				case 'W':
-					msg = &b.copyBothResponse
-				case 'Z':
-					msg = &b.readyForQuery
-				default:
-					return errors.Errorf("unknown message type: %c", header[0])
-				}
-
-				if err := rmsgs.Write(msg, msgBody); err != nil {
-					return err
-				}
-
-				if done || rmsgs.WriteCapacity() <= 0 {
-					return nil
-				}
-
-				headerWp = 0
-				msgWp = 0
-			}
-
-			if b.rb.Avail() <= 0 {
+			if len(headerSlice) > 0 {
 				break
 			}
+
+			bodyLen := int(binary.BigEndian.Uint32(header[1:])) - 4
+			if bodyLen > 0 {
+				msgBody = make([]byte, bodyLen)
+				msgBodySlice = msgBody
+
+				for len(msgBodySlice) > 0 {
+					_, err = b.rb.ReadFromRawConn(b.rawConn)
+					if err != nil {
+						return err
+					}
+
+					if b.rb.Avail() > 0 {
+						rn, err = b.rb.Read(msgBodySlice)
+						if err != nil {
+							return err
+						}
+						msgBodySlice = msgBodySlice[rn:]
+					}
+				}
+			}
+
+			msg := b.backendMsgFlyweights[header[0]]
+			if msg == nil {
+				return errors.Errorf("unknown message type: %c", header[0])
+			}
+
+			if err := rmsgs.Write(msg, msgBody); err != nil {
+				return err
+			}
+
+			// buffer is full, no need to get and decode more message
+			if rmsgs.WriteCapacity() <= 0 {
+				return nil
+			}
+
+			headerSlice = header[:]
+			msgBody = nil
 		}
 	}
+
+	return nil
 }
 
 func NewReceivedMessages(n int) *ReceivedMessages {
