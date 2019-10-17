@@ -4,6 +4,7 @@ import (
 	"testing"
 )
 
+// benchmark for decode message header type by switch
 func BenchmarkBackendMessageDecodeBySwitch(b *testing.B) {
 	var authentication Authentication
 	var backendKeyData BackendKeyData
@@ -83,6 +84,7 @@ func BenchmarkBackendMessageDecodeBySwitch(b *testing.B) {
 	}
 }
 
+// benchmark for decode message header type by array
 func BenchmarkBackendMessageDecodeByArray(b *testing.B) {
 	var backendMsgFlyweights [256]BackendMessage
 	backendMsgFlyweights[uint8('1')] = &ParseComplete{}

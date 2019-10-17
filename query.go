@@ -41,7 +41,7 @@ func (r *Row) Scan(dest ...interface{}) (err error) {
 
 // Rows is the result set returned from *Conn.Query. Rows must be closed before
 // the *Conn can be used again. Rows are closed by explicitly calling Close(),
-// calling Next() until it returns 0, or when a fatal error occurs.
+// calling Next() until it returns false, or when a fatal error occurs.
 type Rows struct {
 	conn       *Conn
 	connPool   *ConnPool

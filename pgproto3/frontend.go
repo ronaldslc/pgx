@@ -14,6 +14,7 @@ type Frontend struct {
 	rb      *rbuf.FixedSizeRingBuf
 	w       io.Writer
 
+	// array of BackendMessage for getting BackendMessage by message header first byte
 	backendMsgFlyweights [256]BackendMessage
 }
 
@@ -76,7 +77,7 @@ func (b *Frontend) Receive(rmsgs *ReceivedMessages) error {
 	var msgBody []byte      // current processing message body
 	var msgBodySlice []byte // the message body slice to read
 
-	// loop until at least 1 message and no data
+	// loop until at least 1 message
 	for rmsgs.Readable() <= 0 {
 		_, err := b.rb.ReadFromRawConn(b.rawConn)
 		if err != nil {
@@ -85,22 +86,25 @@ func (b *Frontend) Receive(rmsgs *ReceivedMessages) error {
 
 		// decode the message header and write message and its body to ReceivedMessages
 		for b.rb.Avail() > 0 {
-			// header
+			// read header
 			rn, err := b.rb.Read(headerSlice)
 			if err != nil {
 				return err
 			}
 			headerSlice = headerSlice[rn:]
 
+			// header array is not full, break to read data from raw conn
 			if len(headerSlice) > 0 {
 				break
 			}
 
+			// header array is full, get message body length
 			bodyLen := int(binary.BigEndian.Uint32(header[1:])) - 4
 			if bodyLen > 0 {
 				msgBody = make([]byte, bodyLen)
 				msgBodySlice = msgBody
 
+				// loop to get whole message body
 				for len(msgBodySlice) > 0 {
 					_, err = b.rb.ReadFromRawConn(b.rawConn)
 					if err != nil {
@@ -117,11 +121,13 @@ func (b *Frontend) Receive(rmsgs *ReceivedMessages) error {
 				}
 			}
 
+			// decode message type
 			msg := b.backendMsgFlyweights[header[0]]
 			if msg == nil {
 				return errors.Errorf("unknown message type: %c", header[0])
 			}
 
+			// write the message to ReceivedMessages
 			if err := rmsgs.Write(msg, msgBody); err != nil {
 				return err
 			}
@@ -131,6 +137,7 @@ func (b *Frontend) Receive(rmsgs *ReceivedMessages) error {
 				return nil
 			}
 
+			// reset headerSlice and msgBody for next message decode usage
 			headerSlice = header[:]
 			msgBody = nil
 		}
@@ -226,6 +233,8 @@ func (r *ReceivedMessages) Forward() {
 	r.readable++
 }
 
+// update ReceivedMessages capacity, it will copy existing BackendMessage and message body to new array
+// if they are not yet read
 func (r *ReceivedMessages) SetCapacity(capacity int) {
 	if r.Len() == capacity {
 		return
