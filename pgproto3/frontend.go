@@ -65,11 +65,8 @@ func (b *Frontend) Send(msg FrontendMessage) error {
 	return err
 }
 
-// function to batch receive backend message
-// given array(msgs, msgBodies) must be already allocated
-// non-decoded BackendMessage will be assigned to msgs, and message body ([][]byte) will be assigned to msgBodies
-// n is the maximum row count to get data row
-// returning int is the count of received messages
+// function to batch receive backend message and write to given ReceivedMessages
+// this will make sure ReceivedMessages have at least 1 BackendMessage
 func (b *Frontend) Receive(rmsgs *ReceivedMessages) error {
 	var header [5]byte       // the header array to get message type and body length
 	headerSlice := header[:] // the header slice to read
