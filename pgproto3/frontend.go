@@ -165,7 +165,7 @@ func (r *ReceivedMessages) Read() (BackendMessage, []byte, error) {
 
 // function to BackendMessage and its body by index (k)
 // the start point is (r.rp + k) % r.Len()
-// this function will not forward moved message forward
+// this function will not move message read position forward
 func (r *ReceivedMessages) Kth(k int) (BackendMessage, []byte) {
 	rp := (r.rp + k) % r.Len()
 	return r.msgs[rp], r.msgBodies[rp]
@@ -200,6 +200,7 @@ func (r ReceivedMessages) WriteCapacity() int {
 	return len(r.msgs) - r.Readable()
 }
 
+// return the length of messages array
 func (r ReceivedMessages) Len() int {
 	return len(r.msgs)
 }
