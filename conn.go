@@ -144,6 +144,7 @@ type Conn struct {
 	ConnInfo *pgtype.ConnInfo
 
 	frontend *pgproto3.Frontend
+	rmsgs *pgproto3.ReceivedMessages //the received array of non-decoded BackendMessage
 }
 
 // PreparedStatement is a description of a prepared statement
@@ -319,6 +320,7 @@ func (c *Conn) connect(config ConnConfig, network, address string, tlsConfig *tl
 	c.doneChan = make(chan struct{})
 	c.closedChan = make(chan error)
 	c.wbuf = make([]byte, 0, 1024)
+	c.rmsgs = pgproto3.NewReceivedMessages(100) // default maximum received message count to 100
 
 	c.mux.Lock()
 	c.status = connStatusIdle
@@ -1167,8 +1169,7 @@ func (c *Conn) rxMsg() (pgproto3.BackendMessage, error) {
 		return nil, ErrDeadConn
 	}
 
-	rmsgs := pgproto3.NewReceivedMessages(1)
-	err := c.frontend.Receive(rmsgs)
+	err := c.frontend.Receive(c.rmsgs)
 	if err != nil {
 		if netErr, ok := err.(net.Error); !(ok && netErr.Timeout()) {
 			c.die(err)
@@ -1176,7 +1177,7 @@ func (c *Conn) rxMsg() (pgproto3.BackendMessage, error) {
 		return nil, err
 	}
 
-	msg, msgBody, err := rmsgs.Read()
+	msg, msgBody, err := c.rmsgs.Read()
 	if err != nil {
 		return nil, err
 	}

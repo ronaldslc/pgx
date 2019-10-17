@@ -57,8 +57,6 @@ type Rows struct {
 	unlockConn bool
 	closed     bool
 
-	msgs *pgproto3.ReceivedMessages // the received non-decoded messages
-
 	// the count of row which need to be read in Scan
 	// if it is large then rowIdx, rows.Next will not get the row data from Reader
 	// and return the pendingRowCount - rowIdx
@@ -152,15 +150,16 @@ func (rows *Rows) BatchNext() int {
 	rows.rowIdx = 0
 	rows.pendingRowCount = 0
 
-	for idx := rows.msgs.Readable(); idx > 0; idx-- {
-		msg, msgBody, err := rows.msgs.Read()
+	outer:
+	for idx := rows.conn.rmsgs.Readable(); idx > 0; idx-- {
+		msg, msgBody, err := rows.conn.rmsgs.Read()
 		if err != nil {
 			rows.fatal(err)
 			return 0
 		}
 
 		if _, ok := msg.(*pgproto3.CommandComplete); ok && rows.pendingRowCount > 0 {
-			rows.msgs.Backward()
+			rows.conn.rmsgs.Backward()
 			return rows.pendingRowCount
 		}
 
@@ -196,6 +195,9 @@ func (rows *Rows) BatchNext() int {
 			}
 			rows.rowCount++
 			rows.pendingRowCount++
+			if rows.pendingRowCount >= len(rows.values) {
+				break outer
+			}
 		case *pgproto3.CommandComplete:
 			rows.rowCount++
 			rows.Close()
@@ -240,7 +242,7 @@ func (rows *Rows) batchRead() (err error) {
 	if rows.closed {
 		return nil
 	}
-	err = rows.conn.frontend.Receive(rows.msgs)
+	err = rows.conn.frontend.Receive(rows.conn.rmsgs)
 	if err != nil {
 		if netErr, ok := err.(net.Error); !(ok && netErr.Timeout()) {
 			rows.conn.die(err)
@@ -436,7 +438,6 @@ func (c *Conn) getRows(bufferSize int, sql string, args []interface{}) *Rows {
 	}
 	// pre-allocated value and message array capacity
 	r.values = make([][][]byte, bufferSize)
-	r.msgs = pgproto3.NewReceivedMessages(bufferSize)
 
 	return r
 }
