@@ -109,7 +109,7 @@ func (cc *ConnConfig) networkAddress() (network, address string) {
 // goroutines.
 type Conn struct {
 	conn                   net.Conn  // the underlying TCP or unix domain socket connection
-	rawConn                *RawConn  // the rawConn to wrap Conn.conn
+	wrapConn               *WrapConn // the wrapConn to wrap Conn.conn to switch blocking or non-blocking Read()
 	lastActivityTime       time.Time // the last time the connection was used
 	wbuf                   []byte
 	pid                    uint32            // backend pid
@@ -150,13 +150,16 @@ type Conn struct {
 
 // structure to wrap net.Conn in Conn
 // net.Conn must be convertible to syscall.Conn to get syscall.RawConn
-type RawConn struct {
-	net.Conn                 // inherit net.Conn to implement net.Conn interface
-	rc       syscall.RawConn // RawConn to implement non-blocking Read()
+type WrapConn struct {
+	net.Conn          // inherit net.Conn to implement net.Conn interface
+	rc       *RawConn // RawConn that implemented non-blocking Read()
 
-	// flag to use net.Conn or syscall.RawConn Read function
-	// if block is false, it will use syscall.RawConn Read function to make it non-blocking
-	block bool
+	r io.Reader // change r to net.Conn or rc for blocking for non-blocking Read()
+}
+
+// structure to implement non-blocking Read function to syscall.RawConn for io.Reader
+type RawConn struct {
+	rc syscall.RawConn // RawConn to implement non-blocking Read()
 }
 
 // PreparedStatement is a description of a prepared statement
@@ -324,11 +327,11 @@ func (c *Conn) connect(config ConnConfig, network, address string, tlsConfig *tl
 		}
 	}()
 
-	c.rawConn, err = newRawConn(c.conn)
+	c.wrapConn, err = newWrapConn(c.conn)
 	if err != nil {
 		return err
 	}
-	c.conn = c.rawConn
+	c.conn = c.wrapConn
 
 	c.RuntimeParams = make(map[string]string)
 	c.preparedStatements = make(map[string]*PreparedStatement)
@@ -510,7 +513,7 @@ func (c *Conn) Close() (err error) {
 	}
 
 	// use blocking Read()
-	c.rawConn.block = true
+	c.wrapConn.ToBlockingRead()
 	_, err = c.conn.Read(make([]byte, 1))
 	if err != io.EOF {
 		return err
@@ -1334,7 +1337,7 @@ func (c *Conn) startTLS(tlsConfig *tls.Config) (err error) {
 	}
 
 	// use blocking Read() to call ReadFull and Handshake() to validate
-	c.rawConn.block = true
+	c.wrapConn.ToBlockingRead()
 	response := make([]byte, 1)
 	if _, err = io.ReadFull(c.conn, response); err != nil {
 		return
@@ -1349,7 +1352,7 @@ func (c *Conn) startTLS(tlsConfig *tls.Config) (err error) {
 		return
 	}
 	// reset to non-blocking read
-	c.rawConn.block = false
+	c.wrapConn.ToNonBlockingRead()
 
 	c.conn = tlsConn
 
@@ -1735,27 +1738,40 @@ func (c *Conn) ensureConnectionReadyForQuery() error {
 	return nil
 }
 
-func newRawConn(conn net.Conn) (*RawConn, error) {
+// wrap net.Conn to WrapConn to be able switching of block or non-blocking Read()
+func newWrapConn(conn net.Conn) (*WrapConn, error) {
 	sc, ok := conn.(syscall.Conn)
 	if !ok {
 		return nil, errors.Errorf("net.Conn [%T] cannot convert to syscall.Conn", conn)
 	}
 
-	rawConn, err := sc.SyscallConn()
+	rc, err := sc.SyscallConn()
 	if err != nil {
 		return nil, err
 	}
 
-	return &RawConn{Conn: conn, rc: rawConn}, nil
+	rawConn := &RawConn{rc: rc}
+
+	// default to non-blocking Read()
+	return &WrapConn{Conn: conn, rc: rawConn, r: rawConn}, nil
 }
 
-// implement io.Reader, if RawConn.block is true, then use net.Conn Read function
-// otherwise, use non-blocking read by syscall.RawConn
-func (rc *RawConn) Read(b []byte) (n int, err error) {
-	if rc.block {
-		return rc.Conn.Read(b)
-	}
+// implement io.Reader, return WrapConn.r.Read()
+func (rc *WrapConn) Read(b []byte) (n int, err error) {
+	return rc.r.Read(b)
+}
 
+// switch to blocking Read() from net.Conn
+func (rc *WrapConn) ToBlockingRead() {
+	rc.r = rc.Conn
+}
+
+// switch to non-blocking Read() from RawConn
+func (rc *WrapConn) ToNonBlockingRead() {
+	rc.r = rc.rc
+}
+
+func (rc *RawConn) Read(b []byte) (n int, err error) {
 	var e error
 	if err = rc.rc.Read(func(s uintptr) bool {
 		var m int
@@ -1766,6 +1782,9 @@ func (rc *RawConn) Read(b []byte) (n int, err error) {
 		return true
 	}); err != nil {
 		return
+	}
+	if n <= 0 {
+		return 0, e
 	}
 	return
 }
