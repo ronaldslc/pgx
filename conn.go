@@ -1783,8 +1783,5 @@ func (rc *RawConn) Read(b []byte) (n int, err error) {
 	}); err != nil {
 		return
 	}
-	if n <= 0 {
-		return 0, e
-	}
-	return
+	return n, e
 }
