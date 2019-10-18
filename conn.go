@@ -109,6 +109,7 @@ func (cc *ConnConfig) networkAddress() (network, address string) {
 // goroutines.
 type Conn struct {
 	conn                   net.Conn  // the underlying TCP or unix domain socket connection
+	wrapConn               *WrapConn // the wrapConn to wrap Conn.conn to switch blocking or non-blocking Read()
 	lastActivityTime       time.Time // the last time the connection was used
 	wbuf                   []byte
 	pid                    uint32            // backend pid
@@ -144,7 +145,21 @@ type Conn struct {
 	ConnInfo *pgtype.ConnInfo
 
 	frontend *pgproto3.Frontend
-	rmsgs *pgproto3.ReceivedMessages //the received array of non-decoded BackendMessage
+	rmsgs    *pgproto3.ReceivedMessages //the received array of non-decoded BackendMessage
+}
+
+// structure to wrap net.Conn in Conn
+// net.Conn must be convertible to syscall.Conn to get syscall.RawConn
+type WrapConn struct {
+	net.Conn          // inherit net.Conn to implement net.Conn interface
+	rc       *RawConn // RawConn that implemented non-blocking Read()
+
+	r io.Reader // change r to net.Conn or rc for blocking or non-blocking Read()
+}
+
+// structure to implement non-blocking Read function to syscall.RawConn for io.Reader
+type RawConn struct {
+	rc syscall.RawConn // RawConn to implement non-blocking Read()
 }
 
 // PreparedStatement is a description of a prepared statement
@@ -312,6 +327,12 @@ func (c *Conn) connect(config ConnConfig, network, address string, tlsConfig *tl
 		}
 	}()
 
+	c.wrapConn, err = newWrapConn(c.conn)
+	if err != nil {
+		return err
+	}
+	c.conn = c.wrapConn
+
 	c.RuntimeParams = make(map[string]string)
 	c.preparedStatements = make(map[string]*PreparedStatement)
 	c.channels = make(map[string]struct{})
@@ -335,14 +356,7 @@ func (c *Conn) connect(config ConnConfig, network, address string, tlsConfig *tl
 		}
 	}
 
-	var rawConn syscall.RawConn
-	if sc, ok := c.conn.(syscall.Conn); ok {
-		if rawConn, err = sc.SyscallConn(); err != nil {
-			return err
-		}
-	}
-
-	c.frontend, err = pgproto3.NewFrontend(c.conn, c.conn, rawConn)
+	c.frontend, err = pgproto3.NewFrontend(c.conn, c.conn)
 	if err != nil {
 		return err
 	}
@@ -498,6 +512,8 @@ func (c *Conn) Close() (err error) {
 		return err
 	}
 
+	// use blocking Read()
+	c.wrapConn.ToBlockingRead()
 	_, err = c.conn.Read(make([]byte, 1))
 	if err != io.EOF {
 		return err
@@ -1320,6 +1336,8 @@ func (c *Conn) startTLS(tlsConfig *tls.Config) (err error) {
 		return
 	}
 
+	// use blocking Read() to call ReadFull and Handshake() to validate
+	c.wrapConn.ToBlockingRead()
 	response := make([]byte, 1)
 	if _, err = io.ReadFull(c.conn, response); err != nil {
 		return
@@ -1329,7 +1347,14 @@ func (c *Conn) startTLS(tlsConfig *tls.Config) (err error) {
 		return ErrTLSRefused
 	}
 
-	c.conn = tls.Client(c.conn, tlsConfig)
+	tlsConn := tls.Client(c.conn, tlsConfig)
+	if err = tlsConn.Handshake(); err != nil {
+		return
+	}
+	// reset to non-blocking read
+	c.wrapConn.ToNonBlockingRead()
+
+	c.conn = tlsConn
 
 	return nil
 }
@@ -1711,4 +1736,52 @@ func (c *Conn) ensureConnectionReadyForQuery() error {
 	}
 
 	return nil
+}
+
+// wrap net.Conn to WrapConn to be able switching of block or non-blocking Read()
+func newWrapConn(conn net.Conn) (*WrapConn, error) {
+	sc, ok := conn.(syscall.Conn)
+	if !ok {
+		return nil, errors.Errorf("net.Conn [%T] cannot convert to syscall.Conn", conn)
+	}
+
+	rc, err := sc.SyscallConn()
+	if err != nil {
+		return nil, err
+	}
+
+	rawConn := &RawConn{rc: rc}
+
+	// default to non-blocking Read()
+	return &WrapConn{Conn: conn, rc: rawConn, r: rawConn}, nil
+}
+
+// implement io.Reader, return WrapConn.r.Read()
+func (rc *WrapConn) Read(b []byte) (n int, err error) {
+	return rc.r.Read(b)
+}
+
+// switch to blocking Read() from net.Conn
+func (rc *WrapConn) ToBlockingRead() {
+	rc.r = rc.Conn
+}
+
+// switch to non-blocking Read() from RawConn
+func (rc *WrapConn) ToNonBlockingRead() {
+	rc.r = rc.rc
+}
+
+func (rc *RawConn) Read(b []byte) (n int, err error) {
+	var e error
+	if err = rc.rc.Read(func(s uintptr) bool {
+		var m int
+		m, e = syscall.Read(int(s), b)
+		if m > 0 {
+			n += m
+		}
+		return true
+	}); err != nil {
+		return
+	}
+	return n, e
 }

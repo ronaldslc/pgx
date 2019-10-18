@@ -3,16 +3,14 @@ package pgproto3
 import (
 	"encoding/binary"
 	"github.com/mysilkway/rbuf"
-	"io"
-	"syscall"
-
 	"github.com/pkg/errors"
+	"io"
 )
 
 type Frontend struct {
-	rawConn syscall.RawConn // used RawConn to make Read function to be non-blocking
-	rb      *rbuf.FixedSizeRingBuf
-	w       io.Writer
+	rb *rbuf.FixedSizeRingBuf
+	r  io.Reader // io.Reader to read BackendMessage, Read function must be non-blocking
+	w  io.Writer
 
 	// array of BackendMessage for getting BackendMessage by message header first byte
 	backendMsgFlyweights [256]BackendMessage
@@ -27,13 +25,13 @@ type ReceivedMessages struct {
 	readable  int // how many message can be read
 }
 
-func NewFrontend(r io.Reader, w io.Writer, rawConn syscall.RawConn) (*Frontend, error) {
+func NewFrontend(r io.Reader, w io.Writer) (*Frontend, error) {
 	// By historical reasons Postgres currently has 8KB send buffer inside,
 	// so here we want to have at least the same size buffer.
 	// @see https://github.com/postgres/postgres/blob/249d64999615802752940e017ee5166e726bc7cd/src/backend/libpq/pqcomm.c#L134
 	// @see https://www.postgresql.org/message-id/0cdc5485-cb3c-5e16-4a46-e3b2f7a41322%40ya.ru
 	rb := rbuf.NewFixedSizeRingBuf(8192)
-	b := &Frontend{rb: rb, w: w, rawConn: rawConn}
+	b := &Frontend{rb: rb, r: r, w: w}
 
 	b.backendMsgFlyweights[uint8('1')] = &ParseComplete{}
 	b.backendMsgFlyweights[uint8('2')] = &BindComplete{}
@@ -76,7 +74,7 @@ func (b *Frontend) Receive(rmsgs *ReceivedMessages) error {
 
 	// loop until at least 1 message and make sure header does not have any data read before return, so the header data will not lost
 	for rmsgs.Readable() <= 0 || len(headerSlice) < len(header) {
-		_, err := b.rb.ReadFromRawConn(b.rawConn)
+		_, err := b.rb.ReadFrom(b.r)
 		if err != nil {
 			return err
 		}
@@ -103,7 +101,7 @@ func (b *Frontend) Receive(rmsgs *ReceivedMessages) error {
 
 				// loop to get whole message body
 				for len(msgBodySlice) > 0 {
-					_, err = b.rb.ReadFromRawConn(b.rawConn)
+					_, err = b.rb.ReadFrom(b.r)
 					if err != nil {
 						return err
 					}
