@@ -154,7 +154,7 @@ type WrapConn struct {
 	net.Conn          // inherit net.Conn to implement net.Conn interface
 	rc       *RawConn // RawConn that implemented non-blocking Read()
 
-	r io.Reader // change r to net.Conn or rc for blocking for non-blocking Read()
+	r io.Reader // change r to net.Conn or rc for blocking or non-blocking Read()
 }
 
 // structure to implement non-blocking Read function to syscall.RawConn for io.Reader
