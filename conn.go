@@ -109,6 +109,7 @@ func (cc *ConnConfig) networkAddress() (network, address string) {
 // goroutines.
 type Conn struct {
 	conn                   net.Conn  // the underlying TCP or unix domain socket connection
+	rawConn                *RawConn  // the rawConn to wrap Conn.conn
 	lastActivityTime       time.Time // the last time the connection was used
 	wbuf                   []byte
 	pid                    uint32            // backend pid
@@ -144,7 +145,18 @@ type Conn struct {
 	ConnInfo *pgtype.ConnInfo
 
 	frontend *pgproto3.Frontend
-	rmsgs *pgproto3.ReceivedMessages //the received array of non-decoded BackendMessage
+	rmsgs    *pgproto3.ReceivedMessages //the received array of non-decoded BackendMessage
+}
+
+// structure to wrap net.Conn in Conn
+// net.Conn must be convertible to syscall.Conn to get syscall.RawConn
+type RawConn struct {
+	net.Conn                 // inherit net.Conn to implement net.Conn interface
+	rc       syscall.RawConn // RawConn to implement non-blocking Read()
+
+	// flag to use net.Conn or syscall.RawConn Read function
+	// if block is false, it will use syscall.RawConn Read function to make it non-blocking
+	block bool
 }
 
 // PreparedStatement is a description of a prepared statement
@@ -312,6 +324,12 @@ func (c *Conn) connect(config ConnConfig, network, address string, tlsConfig *tl
 		}
 	}()
 
+	c.rawConn, err = newRawConn(c.conn)
+	if err != nil {
+		return err
+	}
+	c.conn = c.rawConn
+
 	c.RuntimeParams = make(map[string]string)
 	c.preparedStatements = make(map[string]*PreparedStatement)
 	c.channels = make(map[string]struct{})
@@ -335,14 +353,7 @@ func (c *Conn) connect(config ConnConfig, network, address string, tlsConfig *tl
 		}
 	}
 
-	var rawConn syscall.RawConn
-	if sc, ok := c.conn.(syscall.Conn); ok {
-		if rawConn, err = sc.SyscallConn(); err != nil {
-			return err
-		}
-	}
-
-	c.frontend, err = pgproto3.NewFrontend(c.conn, c.conn, rawConn)
+	c.frontend, err = pgproto3.NewFrontend(c.conn, c.conn)
 	if err != nil {
 		return err
 	}
@@ -498,6 +509,8 @@ func (c *Conn) Close() (err error) {
 		return err
 	}
 
+	// use blocking Read()
+	c.rawConn.block = true
 	_, err = c.conn.Read(make([]byte, 1))
 	if err != io.EOF {
 		return err
@@ -1320,6 +1333,8 @@ func (c *Conn) startTLS(tlsConfig *tls.Config) (err error) {
 		return
 	}
 
+	// use blocking Read() to call ReadFull and Handshake() to validate
+	c.rawConn.block = true
 	response := make([]byte, 1)
 	if _, err = io.ReadFull(c.conn, response); err != nil {
 		return
@@ -1329,7 +1344,14 @@ func (c *Conn) startTLS(tlsConfig *tls.Config) (err error) {
 		return ErrTLSRefused
 	}
 
-	c.conn = tls.Client(c.conn, tlsConfig)
+	tlsConn := tls.Client(c.conn, tlsConfig)
+	if err = tlsConn.Handshake(); err != nil {
+		return
+	}
+	// reset to non-blocking read
+	c.rawConn.block = false
+
+	c.conn = tlsConn
 
 	return nil
 }
@@ -1711,4 +1733,42 @@ func (c *Conn) ensureConnectionReadyForQuery() error {
 	}
 
 	return nil
+}
+
+func newRawConn(conn net.Conn) (*RawConn, error) {
+	sc, ok := conn.(syscall.Conn)
+	if !ok {
+		return nil, errors.Errorf("net.Conn [%T] cannot convert to syscall.Conn", conn)
+	}
+
+	rawConn, err := sc.SyscallConn()
+	if err != nil {
+		return nil, err
+	}
+
+	return &RawConn{Conn: conn, rc: rawConn}, nil
+}
+
+// implement io.Reader, if RawConn.block is true, then use net.Conn Read function
+// otherwise, use non-blocking read by syscall.RawConn
+func (rc *RawConn) Read(b []byte) (n int, err error) {
+	if rc.block {
+		return rc.Conn.Read(b)
+	}
+
+	var e error
+	if err = rc.rc.Read(func(s uintptr) bool {
+		var m int
+		m, e = syscall.Read(int(s), b)
+		if m > 0 {
+			n += m
+		}
+		return true
+	}); err != nil {
+		return
+	}
+	if n <= 0 {
+		return 0, e
+	}
+	return
 }

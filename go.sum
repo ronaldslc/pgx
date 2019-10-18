@@ -12,6 +12,8 @@ github.com/mattn/go-isatty v0.0.8 h1:HLtExJ+uU2HOZ+wI0Tt5DtUDrx8yhUqDcp7fYERX4CE
 github.com/mattn/go-isatty v0.0.8/go.mod h1:Iq45c/XA43vh69/j3iqttzPXn0bhXyGjM0Hdxcsrc5s=
 github.com/mysilkway/rbuf v0.0.0-20191017012336-c083b33344ef h1:OpVu+r/h1gwALXEuONjqe642JAuyfYMdjv5YQP8kf7c=
 github.com/mysilkway/rbuf v0.0.0-20191017012336-c083b33344ef/go.mod h1:9A150yOpk9H4jFNEzGCXFSRDMDjnIwjFqfvdFdIyNZI=
+github.com/mysilkway/rbuf v0.0.0-20191018033420-bcdcd0c0cd7e h1:o7N/16e+o6TvJCm/71eSLC7NbsR0raXRQ/V9zrKzRfE=
+github.com/mysilkway/rbuf v0.0.0-20191018033420-bcdcd0c0cd7e/go.mod h1:9A150yOpk9H4jFNEzGCXFSRDMDjnIwjFqfvdFdIyNZI=
 github.com/pkg/errors v0.8.1 h1:iURUrRGxPUNPdy5/HRSm+Yj6okJ6UtLINN0Q9M4+h3I=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
