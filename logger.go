@@ -3,6 +3,7 @@ package pgx
 import (
 	"encoding/hex"
 	"fmt"
+	uuid "github.com/satori/go.uuid"
 
 	"github.com/pkg/errors"
 )
@@ -101,7 +102,30 @@ func logQueryArgs(args []interface{}) []interface{} {
 			if len(v) > 64 {
 				a = fmt.Sprintf("%s (truncated %d bytes)", v[:64], len(v)-64)
 			}
+		case *string:
+			if len(*v) > 64 {
+				a = fmt.Sprintf("%s (truncated %d bytes)", (*v)[:64], len(*v)-64)
+			} else {
+				a = fmt.Sprintf("%s", *v)
+			}
+		case [][16]uint8: // array of raw UUID formats
+			out := make([]string, 0, len(v))
+			for _, va := range v {
+				b := uuid.UUID(va)
+				out = append(out, b.String())
+			}
+			a = out
+		default:
+			if v, ok := a.(fmt.Stringer); ok {
+				vstr := v.String()
+				if len(v.String()) > 64 {
+					a = fmt.Sprintf("%s (truncated %d bytes)", vstr[:64], len(vstr)-64)
+				} else {
+					a = vstr
+				}
+			}
 		}
+
 		logArgs = append(logArgs, a)
 	}
 

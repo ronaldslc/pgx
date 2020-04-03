@@ -150,7 +150,7 @@ func (rows *Rows) BatchNext() int {
 	rows.rowIdx = 0
 	rows.pendingRowCount = 0
 
-	outer:
+outer:
 	for idx := rows.conn.rmsgs.Readable(); idx > 0; idx-- {
 		msg, msgBody, err := rows.conn.rmsgs.Read()
 		if err != nil {
