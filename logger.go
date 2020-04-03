@@ -3,7 +3,7 @@ package pgx
 import (
 	"encoding/hex"
 	"fmt"
-	uuid "github.com/satori/go.uuid"
+	uuid "github.com/ronaldslc/go.uuid"
 
 	"github.com/pkg/errors"
 )
